@@ -35,8 +35,15 @@ def linear_interpolation(
         >>> transition.shape
         (10, 543, 3)
     """
-    if start_pose.shape != (543, 3) or end_pose.shape != (543, 3):
-        raise ValueError(f"Poses must be shape (543, 3), got {start_pose.shape} and {end_pose.shape}")
+    # Validate pose shapes match and are 2D with 3 coordinates
+    if start_pose.ndim != 2 or end_pose.ndim != 2:
+        raise ValueError(f"Poses must be 2D arrays, got {start_pose.ndim}D and {end_pose.ndim}D")
+    
+    if start_pose.shape != end_pose.shape:
+        raise ValueError(f"Poses must have same shape, got {start_pose.shape} and {end_pose.shape}")
+    
+    if start_pose.shape[1] != 3:
+        raise ValueError(f"Poses must have 3 coordinates, got {start_pose.shape[1]}")
     
     if num_frames < 2:
         raise ValueError(f"num_frames must be >= 2, got {num_frames}")
@@ -76,8 +83,17 @@ def cubic_spline_interpolation(
         Cubic spline produces smoother motion than linear interpolation
         by ensuring continuous first and second derivatives.
     """
-    if start_pose.shape != (543, 3) or end_pose.shape != (543, 3):
-        raise ValueError(f"Poses must be shape (543, 3)")
+    # Validate pose shapes
+    if start_pose.ndim != 2 or end_pose.ndim != 2:
+        raise ValueError(f"Poses must be 2D arrays")
+    
+    if start_pose.shape != end_pose.shape:
+        raise ValueError(f"Poses must have same shape, got {start_pose.shape} and {end_pose.shape}")
+    
+    if start_pose.shape[1] != 3:
+        raise ValueError(f"Poses must have 3 coordinates, got {start_pose.shape[1]}")
+    
+    num_keypoints = start_pose.shape[0]
     
     if num_frames < 2:
         raise ValueError(f"num_frames must be >= 2")
@@ -89,12 +105,12 @@ def cubic_spline_interpolation(
     poses = np.stack([start_pose, end_pose], axis=0)  # (2, 543, 3)
     
     # Interpolate each keypoint's each coordinate separately
-    interpolated = np.zeros((num_frames, 543, 3), dtype=np.float32)
+    interpolated = np.zeros((num_frames, num_keypoints, 3), dtype=np.float32)
     
     # New time points for interpolation
     t_new = np.linspace(0, 1, num_frames)
     
-    for keypoint_idx in range(543):
+    for keypoint_idx in range(num_keypoints):
         for coord_idx in range(3):
             # Get values for this keypoint's coordinate
             y = poses[:, keypoint_idx, coord_idx]
@@ -134,8 +150,15 @@ def bezier_interpolation(
         Bezier curves provide smooth acceleration/deceleration,
         making motion look more natural than linear interpolation.
     """
-    if start_pose.shape != (543, 3) or end_pose.shape != (543, 3):
-        raise ValueError(f"Poses must be shape (543, 3)")
+    # Validate pose shapes
+    if start_pose.ndim != 2 or end_pose.ndim != 2:
+        raise ValueError(f"Poses must be 2D arrays")
+    
+    if start_pose.shape != end_pose.shape:
+        raise ValueError(f"Poses must have same shape, got {start_pose.shape} and {end_pose.shape}")
+    
+    if start_pose.shape[1] != 3:
+        raise ValueError(f"Poses must have 3 coordinates, got {start_pose.shape[1]}")
     
     if num_frames < 2:
         raise ValueError(f"num_frames must be >= 2")
