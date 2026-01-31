@@ -131,12 +131,15 @@ def concatenate_sequences(
         skeleton = load_skeleton_sequence(file_path)
         sequences.append(skeleton)
     
+    # Detect number of keypoints from first sequence
+    num_keypoints = sequences[0].shape[1]
+    
     # Calculate total frames needed
     total_frames = sum(seq.shape[0] for seq in sequences)
     total_frames += transition_frames * (len(sequences) - 1)  # Add transition gaps
     
-    # Initialize output array
-    concatenated = np.zeros((total_frames, 543, 3), dtype=np.float32)
+    # Initialize output array with detected number of keypoints
+    concatenated = np.zeros((total_frames, num_keypoints, 3), dtype=np.float32)
     
     current_idx = 0
     
