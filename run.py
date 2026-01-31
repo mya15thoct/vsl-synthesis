@@ -28,18 +28,31 @@ def list_available_words():
         print(f"Directory not found: {DATA_DIR}")
         return
     
-    npy_files = sorted(DATA_DIR.glob("*.npy"))
+    # Look for folders containing .npy files
+    word_folders = []
+    for item in DATA_DIR.iterdir():
+        if item.is_dir():
+            # Check if folder contains .npy files
+            npy_files = list(item.glob("*.npy"))
+            if npy_files:
+                word_folders.append(item.name)
     
-    if not npy_files:
-        print("o .npy files found!")
+    # Also check for direct .npy files
+    direct_npy = [f.stem for f in DATA_DIR.glob("*.npy")]
+    
+    all_words = sorted(word_folders + direct_npy)
+    
+    if not all_words:
+        print("No words found!")
+        print("Expected structure:")
+        print("  sequences/Word1/*.npy  OR  sequences/word1.npy")
         return
     
-    print(f"Found {len(npy_files)} words:\n")
+    print(f"Found {len(all_words)} words:\n")
     
     # Display in 4 columns
-    words = [f.stem for f in npy_files]
-    for i in range(0, len(words), 4):
-        row = words[i:i+4]
+    for i in range(0, len(all_words), 4):
+        row = all_words[i:i+4]
         print("  ".join(f"{w:15s}" for w in row))
     
     print("\n" + "="*60)
