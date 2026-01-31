@@ -68,15 +68,33 @@ def load_skeleton_sequence(file_path: Union[str, Path]) -> np.ndarray:
     
     skeleton = np.load(file_path)
     
+    # Handle different data formats
+    if skeleton.ndim == 2:
+        # 2D array: (frames, keypoints*3) -> reshape to (frames, keypoints, 3)
+        num_frames = skeleton.shape[0]
+        num_features = skeleton.shape[1]
+        
+        # Detect number of keypoints
+        if num_features % 3 != 0:
+            raise ValueError(f"Invalid shape {skeleton.shape}: second dimension must be divisible by 3")
+        
+        num_keypoints = num_features // 3
+        
+        # Reshape to 3D
+        skeleton = skeleton.reshape(num_frames, num_keypoints, 3)
+        print(f"  Reshaped from {(num_frames, num_features)} to {skeleton.shape}")
+    
     # Validate shape
     if skeleton.ndim != 3:
-        raise ValueError(f"Expected 3D array, got shape {skeleton.shape}")
-    
-    if skeleton.shape[1] != 543:
-        raise ValueError(f"Expected 543 keypoints, got {skeleton.shape[1]}")
+        raise ValueError(f"Expected 3D array after reshaping, got shape {skeleton.shape}")
     
     if skeleton.shape[2] != 3:
         raise ValueError(f"Expected 3 coordinates (x,y,z), got {skeleton.shape[2]}")
+    
+    # Note: We don't enforce 543 keypoints anymore, as different datasets may have different numbers
+    num_keypoints = skeleton.shape[1]
+    if num_keypoints != 543:
+        print(f"  Warning: Found {num_keypoints} keypoints (expected 543). Continuing anyway...")
     
     return skeleton
 
