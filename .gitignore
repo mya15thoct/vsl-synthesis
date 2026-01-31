@@ -1,0 +1,83 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Data files (large)
+data/words/*.mp4
+data/words/*.avi
+data/sentences/*.mp4
+data/sentences/*.avi
+
+# Model checkpoints (large)
+models/mdm/*.pt
+models/mdm/*.pth
+models/mdm/*.ckpt
+
+# Output videos
+outputs/**/*.mp4
+outputs/**/*.avi
+
+# Keep .npy files but ignore large ones
+*.npy
+
+# Logs
+*.log
+logs/
+wandb/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Keep directory structure
+!data/words/.gitkeep
+!data/sentences/.gitkeep
+!models/mdm/.gitkeep
+!outputs/baseline/.gitkeep
+!outputs/diffusion/.gitkeep
