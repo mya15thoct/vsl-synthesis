@@ -12,7 +12,9 @@ IS_SERVER = os.path.exists("/mnt/ngan/vsl_data")
 if IS_SERVER:
     # Server paths
     DATA_DIR = Path("/mnt/ngan/vsl_data/sequences")
-    OUTPUT_DIR = Path("/mnt/ngan/vsl_synthesis_outputs")
+    # Output to results folder in project directory
+    PROJECT_ROOT = Path(__file__).parent
+    OUTPUT_DIR = PROJECT_ROOT / "results"
 else:
     # Local paths
     PROJECT_ROOT = Path(__file__).parent
