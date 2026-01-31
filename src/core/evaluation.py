@@ -9,7 +9,7 @@ This module provides functions to calculate various metrics:
 """
 
 import numpy as np
-from typing import List, Dict
+from typing import List, Dict, Optional
 from scipy.spatial.distance import euclidean
 
 
