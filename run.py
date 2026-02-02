@@ -73,7 +73,7 @@ Examples:
     
     parser.add_argument('words', nargs='*', help='Words to synthesize (e.g., hello my name)')
     parser.add_argument('--method', '-m', default='spline', 
-                       choices=['linear', 'spline', 'bezier'],
+                       choices=['linear', 'spline', 'bezier', 'diffusion'],
                        help='Interpolation method (default: spline)')
     parser.add_argument('--output', '-o', help='Output filename (default: auto-generated)')
     parser.add_argument('--list', '-l', action='store_true', 
@@ -82,6 +82,7 @@ Examples:
                        help=f'Frames per second (default: {FPS})')
     parser.add_argument('--transition-frames', type=int, default=TRANSITION_FRAMES,
                        help=f'Transition frames (default: {TRANSITION_FRAMES})')
+    parser.add_argument('--model', help='Path to diffusion model (required for --method diffusion)')
     
     args = parser.parse_args()
     
@@ -167,7 +168,11 @@ Examples:
             sentence_str += "_etc"
         output_name = f"{sentence_str}_{args.method}.mp4"
     
-    output_path = OUTPUT_DIR / "baseline" / output_name
+    # Choose output directory based on method
+    if args.method == 'diffusion':
+        output_path = OUTPUT_DIR / "diffusion" / output_name
+    else:
+        output_path = OUTPUT_DIR / "baseline" / output_name
     
     # Run synthesis
     print(f"\n🎥 Synthesizing with {args.method} method...")
@@ -179,7 +184,8 @@ Examples:
             method=args.method,
             output_path=str(output_path),
             transition_frames=args.transition_frames,
-            fps=args.fps
+            fps=args.fps,
+            model_path=args.model
         )
         
         print(f"\nSUCCESS!")

@@ -1,6 +1,6 @@
 # VSL Synthesis - Vietnamese Sign Language Video Synthesis
 
-## 🎯 Overview
+## Overview
 
 This project synthesizes smooth, continuous Vietnamese Sign Language (VSL) videos from individual word videos using diffusion models.
 
@@ -21,7 +21,7 @@ Output:
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 vsl-synthesis/
@@ -86,31 +86,31 @@ output = synthesize_sentence(
 
 ## 📋 Development Phases
 
-### ✅ Phase 1: Planning (Completed)
+### Phase 1: Planning (Completed)
 - Research pretrained diffusion models
 - Create implementation plan
 - Setup project structure
 
-### 🔄 Phase 2: Baseline Implementation (Current)
+### Phase 2: Baseline Implementation (Current)
 - Implement skeleton concatenation
 - Implement spline interpolation
 - Create video rendering pipeline
 - Establish baseline metrics
 
-### ⏳ Phase 3: Diffusion Model Integration
+### Phase 3: Diffusion Model Integration
 - Setup MDM (Motion Diffusion Model)
 - Adapt for VSL skeleton format
 - Fine-tune on VSL data
 - Integrate into pipeline
 
-### ⏳ Phase 4: Evaluation
+### Phase 4: Evaluation
 - Calculate metrics (FID, jerk, smoothness)
 - Compare baseline vs diffusion
 - User study
 
 ---
 
-## 🛠️ Key Components
+## Key Components
 
 ### Interpolation Methods
 - **Linear:** Simple linear interpolation between poses
@@ -126,7 +126,7 @@ output = synthesize_sentence(
 
 ---
 
-## 📊 Expected Results
+## Expected Results
 
 | Method | FID ↓ | Jerk ↓ | Naturalness ↑ |
 |--------|-------|--------|---------------|
@@ -136,7 +136,7 @@ output = synthesize_sentence(
 
 ---
 
-## 🔗 Resources
+## Resources
 
 - **MDM Paper:** [Human Motion Diffusion Model](https://arxiv.org/abs/2209.14916)
 - **MDM GitHub:** [GuyTevet/motion-diffusion-model](https://github.com/GuyTevet/motion-diffusion-model)
@@ -144,18 +144,3 @@ output = synthesize_sentence(
 
 ---
 
-## 📝 License
-
-[Add your license here]
-
----
-
-## 👥 Contributors
-
-[Add contributors]
-
----
-
-## 📧 Contact
-
-[Add contact information]

@@ -117,7 +117,7 @@ def render_skeleton_video_1662(
         out.write(frame)
     
     out.release()
-    print(f"✅ Video saved to: {output_path}")
+    print(f" Video saved to: {output_path}")
 
 
 def render_skeleton_video_generic(
@@ -143,7 +143,7 @@ def render_skeleton_video_generic(
         out.write(frame)
     
     out.release()
-    print(f"✅ Video saved to: {output_path}")
+    print(f" Video saved to: {output_path}")
 
 
 def render_skeleton_video_554(
@@ -186,7 +186,7 @@ def render_skeleton_video_554(
         out.write(frame)
     
     out.release()
-    print(f"✅ Video saved to: {output_path}")
+    print(f" Video saved to: {output_path}")
 
 
 def draw_skeleton_554(

@@ -63,7 +63,7 @@ def synthesize_sentence(
         ...     output_path='outputs/diffusion/sentence.mp4'
         ... )
     """
-    print(f"🎬 Starting synthesis pipeline...")
+    print(f" Starting synthesis pipeline...")
     print(f"   Method: {method}")
     print(f"   Words: {len(word_videos)}")
     print(f"   Transition frames: {transition_frames}")
@@ -79,29 +79,38 @@ def synthesize_sentence(
         raise ValueError("model_path is required when method='diffusion'")
     
     # Step 1: Concatenate sequences with gaps for transitions
-    print(f"\n📦 Step 1: Concatenating {len(word_videos)} sequences...")
+    print(f"\n Step 1: Concatenating {len(word_videos)} sequences...")
     concatenated = concatenate_sequences(word_videos, transition_frames)
     print(f"   Total frames: {concatenated.shape[0]}")
     
     # Step 2: Get transition boundaries
-    print(f"\n🔍 Step 2: Identifying transition boundaries...")
+    print(f"\n Step 2: Identifying transition boundaries...")
     boundaries = get_transition_boundaries(word_videos, transition_frames)
     print(f"   Transitions to generate: {len(boundaries)}")
     
     # Step 3: Generate transitions
-    print(f"\n✨ Step 3: Generating transitions with {method} method...")
+    print(f"\n Step 3: Generating transitions with {method} method...")
     
     if method == 'diffusion':
         # Phase 3: Use diffusion model
-        from .methods.mdm_adapter import VSLToMDMConverter
-        mdm = VSLToMDMConverter(model_path)
+        from .methods.mdm_adapter import MDMTransitionGenerator
+        mdm = MDMTransitionGenerator(model_path=model_path)
+        
+        # Try to load model (will fallback to interpolation if not available)
+        try:
+            mdm.load_model()
+            use_mdm = True
+        except Exception as e:
+            print(f"   Warning: Could not load MDM model: {e}")
+            print(f"   Falling back to spline interpolation")
+            use_mdm = False
         
         for i, (start_idx, end_idx, start_pose_idx, end_pose_idx) in enumerate(boundaries):
             start_pose = concatenated[start_pose_idx]
             end_pose = concatenated[end_pose_idx]
             
             print(f"   Transition {i+1}/{len(boundaries)}: frames {start_idx}-{end_idx}")
-            transition = mdm.generate_transition(start_pose, end_pose, transition_frames)
+            transition = mdm.generate_transition(start_pose, end_pose, transition_frames, use_mdm=use_mdm)
             concatenated[start_idx:end_idx] = transition
     
     else:
@@ -121,7 +130,7 @@ def synthesize_sentence(
             concatenated[start_idx:end_idx] = transition
     
     # Step 4: Render to video
-    print(f"\n🎥 Step 4: Rendering video...")
+    print(f"\n Step 4: Rendering video...")
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
@@ -131,7 +140,7 @@ def synthesize_sentence(
         fps=fps
     )
     
-    print(f"\n✅ Synthesis complete!")
+    print(f"\n Synthesis complete!")
     print(f"   Output: {output_path}")
     print(f"   Duration: {concatenated.shape[0] / fps:.2f} seconds")
     
@@ -186,7 +195,7 @@ def batch_synthesize(
 
 if __name__ == "__main__":
     print("Pipeline module loaded successfully!")
-    print("\n🎬 VSL Synthesis Pipeline")
+    print("\n VSL Synthesis Pipeline")
     print("\nUsage:")
     print("  from src.pipeline import synthesize_sentence")
     print("  output = synthesize_sentence(")
