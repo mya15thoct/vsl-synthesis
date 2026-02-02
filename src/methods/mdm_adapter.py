@@ -400,7 +400,11 @@ class MDMTransitionGenerator:
                 
                 # Load weights
                 state_dict = torch.load(self.model_path, map_location='cpu')
-                self.model.load_state_dict(state_dict, strict=False)
+                
+                # Filter out SMPL-related keys that we don't need
+                filtered_state = {k: v for k, v in state_dict.items() 
+                                  if 'smpl' not in k.lower()}
+                self.model.load_state_dict(filtered_state, strict=False)
                 
                 # Move to device
                 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -414,9 +418,22 @@ class MDMTransitionGenerator:
                 self._model_loaded = True
             
         except Exception as e:
-            print(f"Warning: Could not load MDM model: {e}")
-            print("Will use diffusion-style interpolation fallback")
-            self._model_loaded = True  # Mark as loaded to use fallback
+            # Check if it's just SMPL missing - we can continue without it
+            if 'smpl' in str(e).lower() or 'body_models' in str(e).lower():
+                print(f"Warning: SMPL body models not found (not needed for VSL)")
+                if self.model is not None:
+                    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                    self.model.to(device)
+                    self.model.eval()
+                    self._model_loaded = True
+                    print(f"MDM model loaded (without SMPL) on {device}!")
+                else:
+                    print("Will use diffusion-style interpolation fallback")
+                    self._model_loaded = True
+            else:
+                print(f"Warning: Could not load MDM model: {e}")
+                print("Will use diffusion-style interpolation fallback")
+                self._model_loaded = True  # Mark as loaded to use fallback
     
     def generate_transition(
         self,
