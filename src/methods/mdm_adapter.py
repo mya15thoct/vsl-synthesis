@@ -423,12 +423,16 @@ class MDMTransitionGenerator:
                 # Restore original init
                 rot2xyz.Rotation2xyz.__init__ = original_init
                 
+                # Remove rot2xyz from model - we don't need SMPL conversion
+                if hasattr(self.model, 'rot2xyz'):
+                    self.model.rot2xyz = None
+                
                 # Load weights
                 state_dict = torch.load(self.model_path, map_location='cpu')
                 
                 # Filter out SMPL-related keys that we don't need
                 filtered_state = {k: v for k, v in state_dict.items() 
-                                  if 'smpl' not in k.lower()}
+                                  if 'smpl' not in k.lower() and 'rot2xyz' not in k.lower()}
                 self.model.load_state_dict(filtered_state, strict=False)
                 
                 # Move to device
@@ -444,9 +448,12 @@ class MDMTransitionGenerator:
             
         except Exception as e:
             # Check if it's just SMPL missing - we can continue without it
-            if 'smpl' in str(e).lower() or 'body_models' in str(e).lower():
+            if 'smpl' in str(e).lower() or 'body_models' in str(e).lower() or 'rot2xyz' in str(e).lower():
                 print(f"Warning: SMPL body models not found (not needed for VSL)")
                 if self.model is not None:
+                    # Remove rot2xyz to avoid SMPL errors
+                    if hasattr(self.model, 'rot2xyz'):
+                        self.model.rot2xyz = None
                     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
                     self.model.to(device)
                     self.model.eval()
