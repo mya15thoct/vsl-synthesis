@@ -353,6 +353,20 @@ class MDMTransitionGenerator:
                 from diffusion import gaussian_diffusion as gd
                 from diffusion.respace import SpacedDiffusion, space_timesteps
                 
+                # Patch SMPL to avoid loading body models (not needed for our use case)
+                try:
+                    import model.rotation2xyz as rot2xyz_module
+                    class DummySMPL:
+                        def __init__(self, *args, **kwargs):
+                            pass
+                        def __call__(self, *args, **kwargs):
+                            return None
+                    # Patch the SMPL import
+                    if hasattr(rot2xyz_module, 'smplx'):
+                        rot2xyz_module.smplx.create = lambda *args, **kwargs: DummySMPL()
+                except:
+                    pass
+                
                 # Create diffusion
                 diffusion_steps = getattr(args, 'diffusion_steps', 50)
                 betas = gd.get_named_beta_schedule(
@@ -373,6 +387,14 @@ class MDMTransitionGenerator:
                     loss_type=gd.LossType.MSE,
                     rescale_timesteps=True,
                 )
+                
+                # Create model - patch Rotation2xyz to avoid SMPL
+                import model.rotation2xyz as rot2xyz
+                original_init = rot2xyz.Rotation2xyz.__init__
+                def patched_init(self, device, dataset='humanml'):
+                    self.device = device
+                    self.dataset = dataset
+                rot2xyz.Rotation2xyz.__init__ = patched_init
                 
                 # Create model
                 njoints = 263  # HumanML3D format
@@ -397,6 +419,9 @@ class MDMTransitionGenerator:
                     emb_trans_dec=args.emb_trans_dec,
                     dataset=getattr(args, 'dataset', 'humanml'),
                 )
+                
+                # Restore original init
+                rot2xyz.Rotation2xyz.__init__ = original_init
                 
                 # Load weights
                 state_dict = torch.load(self.model_path, map_location='cpu')
