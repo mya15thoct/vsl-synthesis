@@ -112,13 +112,26 @@ Examples:
     
     for word in args.words:
         # Try folder first (e.g., sequences/Afternoon/)
-        word_folder = DATA_DIR / word
-        word_file = DATA_DIR / f"{word}.npy"
+        # Case-insensitive search: try original, Title case, and UPPER case
+        word_variants = [word, word.title(), word.upper(), word.lower()]
         
         found = False
+        word_folder = None
+        word_file = None
+        
+        # Find matching folder or file (case-insensitive)
+        for variant in word_variants:
+            test_folder = DATA_DIR / variant
+            test_file = DATA_DIR / f"{variant}.npy"
+            if test_folder.is_dir():
+                word_folder = test_folder
+                break
+            if test_file.exists():
+                word_file = test_file
+                break
         
         # Case 1: Folder with .npy files
-        if word_folder.is_dir():
+        if word_folder and word_folder.is_dir():
             npy_files = sorted(word_folder.glob("*.npy"))
             if npy_files:
                 word_files.append(str(word_folder))  # Pass folder path, will be resolved later
@@ -126,7 +139,7 @@ Examples:
                 found = True
         
         # Case 2: Direct .npy file
-        if not found and word_file.exists():
+        if not found and word_file and word_file.exists():
             word_files.append(str(word_file))
             print(f"  {word:15s} -> {word_file.name}")
             found = True
