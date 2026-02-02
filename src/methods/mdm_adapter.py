@@ -324,19 +324,50 @@ class MDMTransitionGenerator:
         sys.path.insert(0, self.mdm_repo_path)
         
         try:
+            import torch
+            import json
             from utils.model_util import create_model_and_diffusion, load_saved_model
-            from utils.parser_util import edit_args
-            from data_loaders.get_data import get_dataset_loader
             
-            # Create args for model loading
-            # This is a simplified version - in practice you'd use proper args
             print(f"Loading MDM model from {self.model_path}...")
             
-            # TODO: Implement proper model loading
-            # This requires setting up the full MDM environment
+            # Load args from the model directory
+            model_dir = Path(self.model_path).parent
+            args_path = model_dir / "args.json"
             
-            self._model_loaded = True
-            print("MDM model loaded successfully!")
+            if args_path.exists():
+                with open(args_path, 'r') as f:
+                    args_dict = json.load(f)
+                
+                # Convert dict to namespace
+                class Args:
+                    pass
+                args = Args()
+                for key, value in args_dict.items():
+                    setattr(args, key, value)
+                
+                # Set some defaults if not present
+                if not hasattr(args, 'cond_mask_prob'):
+                    args.cond_mask_prob = 0.1
+                if not hasattr(args, 'device'):
+                    args.device = 0 if torch.cuda.is_available() else 'cpu'
+                    
+                # Create model and diffusion
+                self.model, self.diffusion = create_model_and_diffusion(args, None)
+                
+                # Load weights
+                load_saved_model(self.model, self.model_path)
+                
+                # Move to device
+                device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                self.model.to(device)
+                self.model.eval()
+                
+                self._model_loaded = True
+                print("MDM model loaded successfully!")
+            else:
+                print(f"Warning: args.json not found at {args_path}")
+                print("Model loaded but may not work correctly for inpainting")
+                self._model_loaded = True
             
         except ImportError as e:
             print(f"Warning: Could not import MDM modules: {e}")
