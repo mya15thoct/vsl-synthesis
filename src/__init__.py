@@ -16,7 +16,6 @@ from .core import (
     concatenate_sequences,
     get_transition_boundaries,
     render_skeleton_video,
-    create_comparison_video,
     calculate_jerk,
     evaluate_transition,
     compare_methods
@@ -39,7 +38,6 @@ __all__ = [
     
     # Core - Rendering
     'render_skeleton_video',
-    'create_comparison_video',
     
     # Core - Evaluation
     'calculate_jerk',
