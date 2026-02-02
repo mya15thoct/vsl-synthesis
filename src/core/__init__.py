@@ -12,7 +12,6 @@ from .concatenation import (
 )
 from .render import (
     render_skeleton_video,
-    create_comparison_video
 )
 from .evaluation import (
     calculate_jerk,
@@ -28,7 +27,6 @@ __all__ = [
     
     # Rendering
     'render_skeleton_video',
-    'create_comparison_video',
     
     # Evaluation
     'calculate_jerk',
