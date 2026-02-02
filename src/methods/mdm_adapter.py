@@ -354,16 +354,19 @@ class MDMTransitionGenerator:
                 from diffusion.respace import SpacedDiffusion, space_timesteps
                 
                 # Create diffusion
+                diffusion_steps = getattr(args, 'diffusion_steps', 50)
                 betas = gd.get_named_beta_schedule(
                     getattr(args, 'noise_schedule', 'cosine'),
-                    getattr(args, 'diffusion_steps', 50)
+                    diffusion_steps
                 )
                 
+                # Handle timestep_respacing - if empty, use all steps
+                timestep_respacing = getattr(args, 'timestep_respacing', '')
+                if not timestep_respacing:
+                    timestep_respacing = str(diffusion_steps)
+                
                 self.diffusion = SpacedDiffusion(
-                    use_timesteps=space_timesteps(
-                        getattr(args, 'diffusion_steps', 50),
-                        getattr(args, 'timestep_respacing', '')
-                    ),
+                    use_timesteps=space_timesteps(diffusion_steps, timestep_respacing),
                     betas=betas,
                     model_mean_type=gd.ModelMeanType.START_X,
                     model_var_type=gd.ModelVarType.FIXED_SMALL,
