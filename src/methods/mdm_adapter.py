@@ -551,6 +551,7 @@ class MDMTransitionGenerator:
         This is the full implementation using MDM's diffusion sampling.
         """
         import torch
+        import numpy
         
         # Check if model components are available
         if self.model is None or self.diffusion is None:
@@ -558,17 +559,21 @@ class MDMTransitionGenerator:
         
         device = next(self.model.parameters()).device
         
-        # Ensure inputs are proper numpy arrays
-        start_frame = np.asarray(start_frame, dtype=np.float32)
-        end_frame = np.asarray(end_frame, dtype=np.float32)
+        # Convert to pure Python lists first to avoid numpy version conflicts
+        start_list = [[float(v) for v in row] for row in start_frame]
+        end_list = [[float(v) for v in row] for row in end_frame]
+        
+        # Create tensors directly from lists
+        start_tensor = torch.tensor(start_list, dtype=torch.float32, device=device)
+        end_tensor = torch.tensor(end_list, dtype=torch.float32, device=device)
         
         # Create motion tensor (batch=1, joints=22, coords=3, frames=num_frames)
         # MDM expects shape: (batch, njoints, nfeats, nframes)
         motion = torch.zeros(1, 22, 3, num_frames, device=device, dtype=torch.float32)
         
         # Set start and end frames
-        motion[0, :, :, 0] = torch.from_numpy(start_frame.copy()).float().to(device)
-        motion[0, :, :, -1] = torch.from_numpy(end_frame.copy()).float().to(device)
+        motion[0, :, :, 0] = start_tensor
+        motion[0, :, :, -1] = end_tensor
         
         # Create inpainting mask (1 = keep, 0 = generate)
         mask = torch.zeros(1, 22, 3, num_frames, device=device, dtype=torch.float32)
