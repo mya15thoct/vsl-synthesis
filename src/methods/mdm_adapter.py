@@ -378,8 +378,14 @@ class MDMTransitionGenerator:
                 njoints = 263  # HumanML3D format
                 nfeats = 1
                 self.model = MDM(
+                    modeltype=getattr(args, 'modeltype', 'mdm'),
                     njoints=njoints,
                     nfeats=nfeats,
+                    num_actions=getattr(args, 'num_actions', 1),
+                    translation=getattr(args, 'translation', True),
+                    pose_rep=getattr(args, 'pose_rep', 'rot6d'),
+                    glob=getattr(args, 'glob', True),
+                    glob_rot=getattr(args, 'glob_rot', True),
                     latent_dim=getattr(args, 'latent_dim', 512),
                     ff_size=getattr(args, 'ff_size', 1024),
                     num_layers=getattr(args, 'layers', 8),
@@ -389,6 +395,7 @@ class MDMTransitionGenerator:
                     cond_mask_prob=args.cond_mask_prob,
                     arch=args.arch,
                     emb_trans_dec=args.emb_trans_dec,
+                    dataset=getattr(args, 'dataset', 'humanml'),
                 )
                 
                 # Load weights
