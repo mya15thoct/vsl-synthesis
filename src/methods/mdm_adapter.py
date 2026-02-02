@@ -353,20 +353,6 @@ class MDMTransitionGenerator:
                 from diffusion import gaussian_diffusion as gd
                 from diffusion.respace import SpacedDiffusion, space_timesteps
                 
-                # Patch SMPL to avoid loading body models (not needed for our use case)
-                try:
-                    import model.rotation2xyz as rot2xyz_module
-                    class DummySMPL:
-                        def __init__(self, *args, **kwargs):
-                            pass
-                        def __call__(self, *args, **kwargs):
-                            return None
-                    # Patch the SMPL import
-                    if hasattr(rot2xyz_module, 'smplx'):
-                        rot2xyz_module.smplx.create = lambda *args, **kwargs: DummySMPL()
-                except:
-                    pass
-                
                 # Create diffusion
                 diffusion_steps = getattr(args, 'diffusion_steps', 50)
                 betas = gd.get_named_beta_schedule(
@@ -388,23 +374,7 @@ class MDMTransitionGenerator:
                     rescale_timesteps=True,
                 )
                 
-                # Create model - patch Rotation2xyz to avoid SMPL completely
-                import model.rotation2xyz as rot2xyz
-                
-                class DummyRotation2xyz:
-                    """Dummy class to replace Rotation2xyz - we don't need SMPL conversion"""
-                    def __init__(self, device, dataset='humanml'):
-                        self.device = device
-                        self.dataset = dataset
-                        self.smpl_model = None  # Dummy attribute
-                    def __call__(self, *args, **kwargs):
-                        return args[0] if args else None
-                
-                # Replace the class entirely
-                original_class = rot2xyz.Rotation2xyz
-                rot2xyz.Rotation2xyz = DummyRotation2xyz
-                
-                # Create model
+                # Create model (SMPL files should be in motion-diffusion-model/body_models/smpl/)
                 njoints = 263  # HumanML3D format
                 nfeats = 1
                 self.model = MDM(
@@ -428,16 +398,9 @@ class MDMTransitionGenerator:
                     dataset=getattr(args, 'dataset', 'humanml'),
                 )
                 
-                # Restore original class
-                rot2xyz.Rotation2xyz = original_class
-                
                 # Load weights
                 state_dict = torch.load(self.model_path, map_location='cpu')
-                
-                # Filter out SMPL-related keys that we don't need
-                filtered_state = {k: v for k, v in state_dict.items() 
-                                  if 'smpl' not in k.lower() and 'rot2xyz' not in k.lower()}
-                self.model.load_state_dict(filtered_state, strict=False)
+                self.model.load_state_dict(state_dict, strict=False)
                 
                 # Move to device
                 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -451,25 +414,9 @@ class MDMTransitionGenerator:
                 self._model_loaded = True
             
         except Exception as e:
-            # Check if it's just SMPL missing - we can continue without it
-            if 'smpl' in str(e).lower() or 'body_models' in str(e).lower() or 'rot2xyz' in str(e).lower():
-                print(f"Warning: SMPL body models not found (not needed for VSL)")
-                if self.model is not None:
-                    # Remove rot2xyz to avoid SMPL errors
-                    if hasattr(self.model, 'rot2xyz'):
-                        self.model.rot2xyz = None
-                    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-                    self.model.to(device)
-                    self.model.eval()
-                    self._model_loaded = True
-                    print(f"MDM model loaded (without SMPL) on {device}!")
-                else:
-                    print("Will use diffusion-style interpolation fallback")
-                    self._model_loaded = True
-            else:
-                print(f"Warning: Could not load MDM model: {e}")
-                print("Will use diffusion-style interpolation fallback")
-                self._model_loaded = True  # Mark as loaded to use fallback
+            print(f"Warning: Could not load MDM model: {e}")
+            print("Will use diffusion-style interpolation fallback")
+            self._model_loaded = True  # Mark as loaded to use fallback
     
     def generate_transition(
         self,
