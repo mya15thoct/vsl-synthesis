@@ -388,13 +388,21 @@ class MDMTransitionGenerator:
                     rescale_timesteps=True,
                 )
                 
-                # Create model - patch Rotation2xyz to avoid SMPL
+                # Create model - patch Rotation2xyz to avoid SMPL completely
                 import model.rotation2xyz as rot2xyz
-                original_init = rot2xyz.Rotation2xyz.__init__
-                def patched_init(self, device, dataset='humanml'):
-                    self.device = device
-                    self.dataset = dataset
-                rot2xyz.Rotation2xyz.__init__ = patched_init
+                
+                class DummyRotation2xyz:
+                    """Dummy class to replace Rotation2xyz - we don't need SMPL conversion"""
+                    def __init__(self, device, dataset='humanml'):
+                        self.device = device
+                        self.dataset = dataset
+                        self.smpl_model = None  # Dummy attribute
+                    def __call__(self, *args, **kwargs):
+                        return args[0] if args else None
+                
+                # Replace the class entirely
+                original_class = rot2xyz.Rotation2xyz
+                rot2xyz.Rotation2xyz = DummyRotation2xyz
                 
                 # Create model
                 njoints = 263  # HumanML3D format
@@ -420,12 +428,8 @@ class MDMTransitionGenerator:
                     dataset=getattr(args, 'dataset', 'humanml'),
                 )
                 
-                # Restore original init
-                rot2xyz.Rotation2xyz.__init__ = original_init
-                
-                # Remove rot2xyz from model - we don't need SMPL conversion
-                if hasattr(self.model, 'rot2xyz'):
-                    self.model.rot2xyz = None
+                # Restore original class
+                rot2xyz.Rotation2xyz = original_class
                 
                 # Load weights
                 state_dict = torch.load(self.model_path, map_location='cpu')
