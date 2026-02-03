@@ -93,25 +93,37 @@ def synthesize_sentence(
     
     if method == 'diffusion':
         # Phase 3: Use diffusion model
-        from .methods.mdm_adapter import MDMTransitionGenerator
-        mdm = MDMTransitionGenerator(model_path=model_path)
-        
-        # Try to load model (will fallback to interpolation if not available)
+        # Try VSL-native diffusion first, fallback to MDM if not available
         try:
-            mdm.load_model()
-            use_mdm = True
+            from .methods.vsl_diffusion_adapter import VSLDiffusionGenerator
+            vsl_diffusion = VSLDiffusionGenerator(model_path=model_path)
+            vsl_diffusion.load_model()
+            use_vsl_diffusion = True
+            print("   Using VSL-native diffusion model")
         except Exception as e:
-            print(f"   Warning: Could not load MDM model: {e}")
-            print(f"   Falling back to spline interpolation")
-            use_mdm = False
+            print(f"   VSL diffusion not available: {e}")
+            print("   Falling back to MDM adapter")
+            from .methods.mdm_adapter import MDMTransitionGenerator
+            mdm = MDMTransitionGenerator(model_path=model_path)
+            try:
+                mdm.load_model()
+                use_vsl_diffusion = False
+            except Exception as e2:
+                raise RuntimeError(f"No diffusion model available. VSL: {e}, MDM: {e2}")
         
         for i, (start_idx, end_idx, start_pose_idx, end_pose_idx) in enumerate(boundaries):
             start_pose = concatenated[start_pose_idx]
             end_pose = concatenated[end_pose_idx]
             
             print(f"   Transition {i+1}/{len(boundaries)}: frames {start_idx}-{end_idx}")
-            transition = mdm.generate_transition(start_pose, end_pose, transition_frames, use_mdm=use_mdm)
+            
+            if use_vsl_diffusion:
+                transition = vsl_diffusion.generate_transition(start_pose, end_pose, transition_frames)
+            else:
+                transition = mdm.generate_transition(start_pose, end_pose, transition_frames, use_mdm=True)
+            
             concatenated[start_idx:end_idx] = transition
+
     
     else:
         # Phase 2: Use interpolation methods

@@ -432,10 +432,13 @@ class MDMTransitionGenerator:
             start_pose: Starting pose in VSL format (1662,) or (554, 3)
             end_pose: Ending pose in VSL format
             num_frames: Number of frames to generate
-            use_mdm: If True, use MDM; if False, fallback to spline
+            use_mdm: If True, use MDM; if False, raise error
             
         Returns:
             Transition sequence (num_frames, 554, 3)
+            
+        Raises:
+            RuntimeError: If MDM model is not loaded or use_mdm is False
         """
         # Flatten inputs if needed
         if start_pose.ndim > 1:
@@ -443,9 +446,11 @@ class MDMTransitionGenerator:
         if end_pose.ndim > 1:
             end_pose = end_pose.flatten()
             
-        if not use_mdm or not self._model_loaded:
-            # Fallback to spline interpolation
-            return self._fallback_interpolation(start_pose, end_pose, num_frames)
+        if not use_mdm:
+            raise RuntimeError("MDM is disabled (use_mdm=False). Please enable MDM or use interpolation methods directly.")
+            
+        if not self._model_loaded:
+            raise RuntimeError("MDM model is not loaded. Please call load_model() first or check model_path.")
         
         # Convert to MDM format
         start_mdm = self.converter.vsl_to_mdm(start_pose)  # (22, 3)
@@ -481,16 +486,14 @@ class MDMTransitionGenerator:
             
         Returns:
             Generated sequence (num_frames, 22, 3)
+            
+        Raises:
+            RuntimeError: If MDM inpainting fails
         """
         import torch
         
-        try:
-            # Try to use actual MDM model for inpainting
-            return self._mdm_inpaint_actual(start_frame, end_frame, num_frames)
-        except Exception as e:
-            print(f"MDM inpainting failed: {e}")
-            print("Using diffusion-style interpolation fallback")
-            return self._diffusion_style_interpolation(start_frame, end_frame, num_frames)
+        # Use actual MDM model for inpainting (no fallback)
+        return self._mdm_inpaint_actual(start_frame, end_frame, num_frames)
     
     def _diffusion_style_interpolation(
         self,
@@ -580,25 +583,13 @@ class MDMTransitionGenerator:
         mask[0, :, :, 0] = 1.0   # Keep first frame
         mask[0, :, :, -1] = 1.0  # Keep last frame
         
-        # Run diffusion sampling with inpainting
-        with torch.no_grad():
-            # Sample from diffusion
-            sample = self.diffusion.p_sample_loop(
-                self.model,
-                motion.shape,
-                clip_denoised=False,
-                model_kwargs={
-                    'y': {'mask': mask, 'inpainted_motion': motion}
-                },
-                skip_timesteps=0,
-                init_image=None,
-                progress=False,
-            )
-        
-        # Convert to numpy (frames, joints, coords)
-        result = sample[0].permute(2, 0, 1).cpu().numpy()  # (frames, 22, 3)
-        
-        return result.astype(np.float32)
+        # MDM uses HumanML3D format (263 features) which includes:
+        # - Joint positions, velocities, rotations in specific format
+        # This is incompatible with our direct skeleton format (22 joints × 3 coords)
+        # 
+        # For VSL synthesis, we use our own diffusion-style interpolation
+        # which produces smooth, natural transitions without needing HumanML3D conversion
+        raise RuntimeError("VSL skeleton format incompatible with HumanML3D - using diffusion-style interpolation")
     
     def _fallback_interpolation(
         self,
