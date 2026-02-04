@@ -45,11 +45,12 @@ def compute_metrics(predicted, target, mask=None):
         mask = mask.unsqueeze(-1)  # (batch, num_frames, 1)
         predicted = predicted * mask
         target = target * mask
-        num_valid = mask.sum()
+        # Calculate total elements (frames * features)
+        num_valid = mask.sum() * predicted.shape[-1]
     else:
         num_valid = predicted.numel()
     
-    # MSE loss
+    # MSE loss (now matches training loss calculation)
     mse = F.mse_loss(predicted, target, reduction='sum') / num_valid
     
     # Smoothness (velocity variance)
