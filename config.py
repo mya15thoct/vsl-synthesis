@@ -29,4 +29,4 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # Settings
 FPS = 30
 TRANSITION_FRAMES = 10
-NUM_KEYPOINTS = 543  # MediaPipe Holistic (will auto-detect if different)
+NUM_KEYPOINTS = 554  # MediaPipe Holistic with world landmarks
