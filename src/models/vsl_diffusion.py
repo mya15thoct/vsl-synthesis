@@ -121,6 +121,9 @@ class VSLDiffusionModel(nn.Module):
         
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
+        self.num_heads = num_heads
+        self.dropout = dropout
         self.max_frames = max_frames
         
         # Condition encoder (start + end poses)
@@ -208,6 +211,9 @@ class VSLDiffusionModel(nn.Module):
             'config': {
                 'input_dim': self.input_dim,
                 'hidden_dim': self.hidden_dim,
+                'num_layers': self.num_layers,
+                'num_heads': self.num_heads,
+                'dropout': self.dropout,
                 'max_frames': self.max_frames
             }
         }, path)
@@ -216,12 +222,16 @@ class VSLDiffusionModel(nn.Module):
     def load(cls, path: str, device: str = 'cpu'):
         """Load model from checkpoint."""
         checkpoint = torch.load(path, map_location=device)
-        config = checkpoint['config']
+        config = checkpoint.get('config', {})
         
+        # Handle old checkpoints without full config
         model = cls(
-            input_dim=config['input_dim'],
-            hidden_dim=config['hidden_dim'],
-            max_frames=config['max_frames']
+            input_dim=config.get('input_dim', 1662),
+            hidden_dim=config.get('hidden_dim', 512),
+            num_layers=config.get('num_layers', 8),
+            num_heads=config.get('num_heads', 8),
+            dropout=config.get('dropout', 0.1),
+            max_frames=config.get('max_frames', 30)
         )
         model.load_state_dict(checkpoint['model_state_dict'])
         model.to(device)
