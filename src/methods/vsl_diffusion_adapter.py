@@ -110,9 +110,9 @@ class VSLDiffusionGenerator:
         if len(start_pose_flat) != 1662:
             raise ValueError(f"Expected 1662 features, got {len(start_pose_flat)}")
         
-        # Convert to tensors
-        start_tensor = torch.from_numpy(start_pose_flat).float().to(self.device)
-        end_tensor = torch.from_numpy(end_pose_flat).float().to(self.device)
+        # Convert to tensors (use torch.tensor to avoid numpy 1.23.5 issue)
+        start_tensor = torch.tensor(start_pose_flat, dtype=torch.float32, device=self.device)
+        end_tensor = torch.tensor(end_pose_flat, dtype=torch.float32, device=self.device)
         
         # Create condition (concatenate start + end)
         condition = torch.cat([start_tensor, end_tensor], dim=-1).unsqueeze(0)  # (1, 3324)
