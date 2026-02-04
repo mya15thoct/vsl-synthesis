@@ -111,11 +111,15 @@ def train_epoch(
         
         # Compute loss (only on valid frames)
         mask_expanded = mask.unsqueeze(-1)  # (batch, num_frames, 1)
+        
+        # Calculate number of valid elements (not just frames)
+        num_valid_elements = mask_expanded.sum() * ground_truth.shape[-1]  # mask_sum * 1662
+        
         loss = F.mse_loss(
             predicted_noise * mask_expanded,
             noise * mask_expanded,
             reduction='sum'
-        ) / mask.sum()
+        ) / num_valid_elements
         
         # Backward pass
         optimizer.zero_grad()
@@ -181,11 +185,15 @@ def validate(model, dataloader, scheduler_diffusion, device):
             
             # Loss
             mask_expanded = mask.unsqueeze(-1)
+            
+            # Calculate number of valid elements
+            num_valid_elements = mask_expanded.sum() * ground_truth.shape[-1]
+            
             loss = F.mse_loss(
                 predicted_noise * mask_expanded,
                 noise * mask_expanded,
                 reduction='sum'
-            ) / mask.sum()
+            ) / num_valid_elements
             
             # Metrics
             metrics = compute_metrics(predicted_noise, noise, mask)
