@@ -276,12 +276,20 @@ def main():
     num_params = sum(p.numel() for p in model.parameters())
     print(f"  Parameters: {num_params:,}")
     
-    # Create diffusion scheduler
-    scheduler_diffusion = DDPMScheduler(
-        num_train_timesteps=1000,
-        beta_schedule="squaredcos_cap_v2",
-        prediction_type="epsilon"
-    )
+    # Create diffusion scheduler (fix numpy compatibility)
+    # Use from_config to avoid numpy version issues
+    from diffusers import SchedulerMixin
+    
+    scheduler_config = {
+        "num_train_timesteps": 1000,
+        "beta_schedule": "squaredcos_cap_v2",
+        "prediction_type": "epsilon",
+        "clip_sample": False,
+        "beta_start": 0.0001,
+        "beta_end": 0.02,
+    }
+    
+    scheduler_diffusion = DDPMScheduler.from_config(scheduler_config)
     
     # Optimizer and LR scheduler
     optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
