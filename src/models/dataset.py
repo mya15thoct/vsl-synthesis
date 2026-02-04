@@ -54,15 +54,11 @@ class VSLTransitionDataset(Dataset):
         # Load transition
         data = np.load(self.transition_files[idx])
         
-        # Convert to numpy arrays explicitly (fix for numpy 1.23.5)
-        start_pose = np.array(data['start_pose'], dtype=np.float32)
-        end_pose = np.array(data['end_pose'], dtype=np.float32)
-        ground_truth = np.array(data['ground_truth'], dtype=np.float32)
-        
-        # Convert to torch tensors
-        start_pose = torch.from_numpy(start_pose).float()
-        end_pose = torch.from_numpy(end_pose).float()
-        ground_truth = torch.from_numpy(ground_truth).float()
+        # Convert directly to torch tensors (bypass numpy compatibility issue)
+        # Using torch.tensor instead of torch.from_numpy to avoid numpy 1.23.5 issue
+        start_pose = torch.tensor(data['start_pose'], dtype=torch.float32)
+        end_pose = torch.tensor(data['end_pose'], dtype=torch.float32)
+        ground_truth = torch.tensor(data['ground_truth'], dtype=torch.float32)
         
         return start_pose, end_pose, ground_truth
 
