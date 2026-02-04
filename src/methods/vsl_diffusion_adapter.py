@@ -133,6 +133,10 @@ class VSLDiffusionGenerator:
         # Convert back to numpy
         transition = x_t[0].cpu().numpy()  # (num_frames, 1662)
         
+        # Normalize/clip to valid range (0-1) to match original data
+        # Diffusion model may output values outside this range
+        transition = np.clip(transition, 0.0, 1.0)
+        
         # Reshape to (num_frames, 554, 3)
         transition = transition.reshape(num_frames, 554, 3)
         
