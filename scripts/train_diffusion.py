@@ -225,7 +225,7 @@ def main():
     
     # Setup
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"\n🚀 Training VSL Diffusion Model")
+    print(f"\nTraining VSL Diffusion Model")
     print(f"  Device: {device}")
     print(f"  Data: {args.data_dir}")
     print(f"  Output: {args.output_dir}")
@@ -239,7 +239,7 @@ def main():
         json.dump(vars(args), f, indent=2)
     
     # Create datasets
-    print("\n📊 Loading datasets...")
+    print("\nLoading datasets...")
     train_dataset = VSLTransitionDataset(args.data_dir, split='train')
     val_dataset = VSLTransitionDataset(args.data_dir, split='val')
     
@@ -265,7 +265,7 @@ def main():
     print(f"  Val: {len(val_dataset)} examples")
     
     # Create model
-    print("\n🏗️  Creating model...")
+    print("\nCreating model...")
     model = VSLDiffusionModel(
         input_dim=1662,
         hidden_dim=args.hidden_dim,
@@ -276,27 +276,20 @@ def main():
     num_params = sum(p.numel() for p in model.parameters())
     print(f"  Parameters: {num_params:,}")
     
-    # Create diffusion scheduler (fix numpy compatibility)
-    # Use from_config to avoid numpy version issues
-    from diffusers import SchedulerMixin
+    # Create diffusion scheduler (use custom implementation to avoid numpy issues)
+    from src.models.custom_scheduler import SimpleDDPMScheduler
     
-    scheduler_config = {
-        "num_train_timesteps": 1000,
-        "beta_schedule": "squaredcos_cap_v2",
-        "prediction_type": "epsilon",
-        "clip_sample": False,
-        "beta_start": 0.0001,
-        "beta_end": 0.02,
-    }
-    
-    scheduler_diffusion = DDPMScheduler.from_config(scheduler_config)
+    scheduler_diffusion = SimpleDDPMScheduler(
+        num_train_timesteps=1000,
+        beta_schedule="squaredcos_cap_v2"
+    )
     
     # Optimizer and LR scheduler
     optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
     scheduler_lr = CosineAnnealingLR(optimizer, T_max=args.epochs)
     
     # Training loop
-    print(f"\n🎯 Starting training for {args.epochs} epochs...")
+    print(f"\nStarting training for {args.epochs} epochs...")
     
     best_val_loss = float('inf')
     history = {'train_loss': [], 'val_loss': []}
@@ -329,7 +322,7 @@ def main():
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             model.save(str(output_dir / 'best.pt'))
-            print(f"  ✅ Saved best model (val_loss: {val_loss:.4f})")
+            print(f"  Saved best model (val_loss: {val_loss:.4f})")
         
         # Save latest
         model.save(str(output_dir / 'latest.pt'))
@@ -338,7 +331,7 @@ def main():
         with open(output_dir / 'history.json', 'w') as f:
             json.dump(history, f, indent=2)
     
-    print(f"\n✅ Training complete!")
+    print(f"\nTraining complete!")
     print(f"  Best val loss: {best_val_loss:.4f}")
     print(f"  Model saved to: {output_dir / 'best.pt'}")
 

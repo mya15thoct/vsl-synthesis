@@ -33,7 +33,7 @@ try:
             beta_schedule="squaredcos_cap_v2",
             prediction_type="epsilon"
         )
-        print("✓ Direct initialization works!")
+        print("Direct initialization works!")
     except TypeError as e:
         print(f"✗ Direct initialization failed: {e}")
         print("\nTrying from_config method...")
@@ -48,7 +48,7 @@ try:
             "beta_end": 0.02,
         }
         scheduler = DDPMScheduler.from_config(config)
-        print("✓ from_config works!")
+        print("from_config works!")
         
 except Exception as e:
     print(f"✗ DDPMScheduler test failed: {e}")

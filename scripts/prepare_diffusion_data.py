@@ -94,7 +94,7 @@ def prepare_dataset(
         train_split: Fraction for training (rest is validation)
         max_videos_per_word: Limit videos per word (for testing)
     """
-    print(f"\n🔍 Scanning for word videos in: {data_dir}")
+    print(f"\nScanning for word videos in: {data_dir}")
     
     # Find all word folders
     word_folders = [d for d in data_dir.iterdir() if d.is_dir()]
@@ -120,7 +120,7 @@ def prepare_dataset(
     val_dir.mkdir(parents=True, exist_ok=True)
     
     # Process videos and extract transitions
-    print(f"\n📊 Extracting transitions (window={window_size}, stride={stride})...")
+    print(f"\n Extracting transitions (window={window_size}, stride={stride})...")
     
     train_transitions = []
     val_transitions = []
@@ -159,7 +159,7 @@ def prepare_dataset(
     stats['total_transitions'] = stats['train_transitions'] + stats['val_transitions']
     
     # Save transitions
-    print(f"\n💾 Saving transitions...")
+    print(f"\nSaving transitions...")
     print(f"  Train: {len(train_transitions)} examples")
     print(f"  Val: {len(val_transitions)} examples")
     
@@ -190,7 +190,7 @@ def prepare_dataset(
     with open(metadata_path, 'w') as f:
         json.dump(stats, f, indent=2)
     
-    print(f"\n✅ Dataset preparation complete!")
+    print(f"\nDataset preparation complete!")
     print(f"  Total transitions: {stats['total_transitions']}")
     print(f"  Train: {stats['train_transitions']}")
     print(f"  Val: {stats['val_transitions']}")
@@ -246,7 +246,7 @@ def main():
     output_dir = Path(args.output_dir)
     
     if not data_dir.exists():
-        print(f"❌ Error: Data directory not found: {data_dir}")
+        print(f"Error: Data directory not found: {data_dir}")
         sys.exit(1)
     
     prepare_dataset(

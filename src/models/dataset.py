@@ -115,11 +115,11 @@ if __name__ == "__main__":
         # Get first example
         start, end, gt = dataset[0]
         
-        print(f"✅ Dataset test passed!")
+        print(f"Dataset test passed!")
         print(f"  Dataset size: {len(dataset)}")
         print(f"  Start pose shape: {start.shape}")
         print(f"  End pose shape: {end.shape}")
         print(f"  Ground truth shape: {gt.shape}")
     except Exception as e:
-        print(f"⚠️  Dataset not ready: {e}")
+        print(f"Warning: Dataset not ready: {e}")
         print("  Run prepare_diffusion_data.py first!")

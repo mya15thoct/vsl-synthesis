@@ -255,7 +255,7 @@ if __name__ == "__main__":
     # Forward pass
     predicted_noise = model(noisy_data, timesteps, condition)
     
-    print(f"✅ Model test passed!")
+    print(f"Model test passed!")
     print(f"  Input shape: {noisy_data.shape}")
     print(f"  Output shape: {predicted_noise.shape}")
     print(f"  Parameters: {sum(p.numel() for p in model.parameters()):,}")

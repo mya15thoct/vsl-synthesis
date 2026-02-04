@@ -56,18 +56,19 @@ class VSLDiffusionGenerator:
         self.model = VSLDiffusionModel.load(str(model_path), device=str(self.device))
         self.model.eval()
         
-        # Create diffusion scheduler (same as training)
-        self.scheduler = DDPMScheduler(
+        # Create diffusion scheduler (use custom implementation)
+        from src.models.custom_scheduler import SimpleDDPMScheduler
+        
+        self.scheduler = SimpleDDPMScheduler(
             num_train_timesteps=1000,
-            beta_schedule="squaredcos_cap_v2",
-            prediction_type="epsilon"
+            beta_schedule="squaredcos_cap_v2"
         )
         
         # Set to 50 inference steps (faster than 1000)
         self.scheduler.set_timesteps(50)
         
         self._model_loaded = True
-        print(f"✅ VSL diffusion model loaded successfully on {self.device}!")
+        print(f"VSL diffusion model loaded successfully on {self.device}!")
     
     def generate_transition(
         self,
@@ -182,8 +183,8 @@ if __name__ == "__main__":
         
         transition = generator.generate_transition(start_pose, end_pose, num_frames=10)
         
-        print(f"\n✅ Adapter test passed!")
+        print(f"\nAdapter test passed!")
         print(f"  Transition shape: {transition.shape}")
     except Exception as e:
-        print(f"\n⚠️  Model not ready: {e}")
+        print(f"\nWarning: Model not ready: {e}")
         print("  Train model first with: python scripts/train_diffusion.py")

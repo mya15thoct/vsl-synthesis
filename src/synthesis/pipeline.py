@@ -131,7 +131,7 @@ def synthesize_sentence(
         fps=fps
     )
     
-    print(f"\n✅ Synthesis complete!")
+    print(f"\nSynthesis complete!")
     print(f"   Output: {output_path}")
     print(f"   Duration: {concatenated.shape[0] / fps:.2f} seconds")
     
