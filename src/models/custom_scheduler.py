@@ -89,9 +89,12 @@ class SimpleDDPMScheduler:
         Returns:
             noisy_samples: (batch, ...)
         """
+        # Move timesteps to CPU for indexing (fix device mismatch)
+        timesteps_cpu = timesteps.cpu()
+        
         # Move coefficients to same device as samples
-        sqrt_alpha_prod = self.sqrt_alphas_cumprod[timesteps].to(original_samples.device)
-        sqrt_one_minus_alpha_prod = self.sqrt_one_minus_alphas_cumprod[timesteps].to(original_samples.device)
+        sqrt_alpha_prod = self.sqrt_alphas_cumprod[timesteps_cpu].to(original_samples.device)
+        sqrt_one_minus_alpha_prod = self.sqrt_one_minus_alphas_cumprod[timesteps_cpu].to(original_samples.device)
         
         # Reshape for broadcasting
         while len(sqrt_alpha_prod.shape) < len(original_samples.shape):
@@ -118,6 +121,10 @@ class SimpleDDPMScheduler:
         Returns:
             Object with prev_sample attribute
         """
+        # Convert timestep to int if tensor (fix device issues)
+        if isinstance(timestep, torch.Tensor):
+            timestep = timestep.item()
+        
         # Get coefficients
         beta_t = self.betas[timestep].to(sample.device)
         sqrt_recip_alpha_t = self.sqrt_recip_alphas[timestep].to(sample.device)
