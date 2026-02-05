@@ -200,17 +200,27 @@ def validate(model, dataloader, scheduler_diffusion, device):
             condition = torch.cat([start_pose, end_pose], dim=-1)
             predicted_noise = model(noisy_data, timesteps, condition)
             
-            # Loss
+            # Compute MSE loss
             mask_expanded = mask.unsqueeze(-1)
-            
-            # Calculate number of valid elements
             num_valid_elements = mask_expanded.sum() * ground_truth.shape[-1]
             
-            loss = F.mse_loss(
+            mse_loss = F.mse_loss(
                 predicted_noise * mask_expanded,
                 noise * mask_expanded,
                 reduction='sum'
             ) / num_valid_elements
+            
+            # Compute constraint losses (same as training)
+            predicted_skeleton = noisy_data - predicted_noise
+            loss, loss_dict = combined_constraint_loss(
+                predicted_skeleton,
+                mse_loss,
+                bone_weight=0.1,
+                smooth_weight=0.05,
+                symmetry_weight=0.02,
+                range_weight=0.1,
+                perceptual_weight=0.15
+            )
             
             # Metrics
             metrics = compute_metrics(predicted_noise, noise, mask)
