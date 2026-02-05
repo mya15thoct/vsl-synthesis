@@ -58,8 +58,13 @@ class MediaPipePerceptualLoss(nn.Module):
         pose_xy = pose_xyz[:, :2]  # Take x, y only
         pose_xy = (pose_xy * img_size).astype(np.int32)
         
+        # Clip to valid range
+        pose_xy = np.clip(pose_xy, 0, img_size - 1)
+        
         # Draw pose keypoints
         for i, (x, y) in enumerate(pose_xy):
+            # Ensure int type for OpenCV
+            x, y = int(x), int(y)
             if 0 <= x < img_size and 0 <= y < img_size:
                 cv2.circle(image, (x, y), 5, (0, 0, 255), -1)
         
@@ -71,11 +76,12 @@ class MediaPipePerceptualLoss(nn.Module):
         ]
         
         for start_idx, end_idx in connections:
-            x1, y1 = pose_xy[start_idx]
-            x2, y2 = pose_xy[end_idx]
-            if (0 <= x1 < img_size and 0 <= y1 < img_size and
-                0 <= x2 < img_size and 0 <= y2 < img_size):
-                cv2.line(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            if start_idx < len(pose_xy) and end_idx < len(pose_xy):
+                x1, y1 = int(pose_xy[start_idx][0]), int(pose_xy[start_idx][1])
+                x2, y2 = int(pose_xy[end_idx][0]), int(pose_xy[end_idx][1])
+                if (0 <= x1 < img_size and 0 <= y1 < img_size and
+                    0 <= x2 < img_size and 0 <= y2 < img_size):
+                    cv2.line(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
         
         return image
     
