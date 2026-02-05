@@ -329,7 +329,7 @@ def perceptual_loss(skeleton_flat):
     """
     # Import MediaPipe loss
     try:
-        from src.models.mediapipe_loss import mediapipe_perceptual_loss
+        from models.mediapipe_loss import mediapipe_perceptual_loss
         
         # Use MediaPipe pretrained model (70% weight)
         mp_loss = mediapipe_perceptual_loss(skeleton_flat)
@@ -346,7 +346,11 @@ def perceptual_loss(skeleton_flat):
         
     except Exception as e:
         # Fallback to custom loss if MediaPipe fails
-        print(f"Warning: MediaPipe loss failed ({e}), using custom loss")
+        # Suppress warning after first occurrence
+        if not hasattr(perceptual_loss, '_warned'):
+            print(f"Note: Using custom perceptual loss (MediaPipe: {e})")
+            perceptual_loss._warned = True
+        
         pose_loss = pose_validity_loss(skeleton_flat)
         hand_loss = hand_coherence_loss(skeleton_flat)
         motion_loss = motion_naturalness_loss(skeleton_flat)
