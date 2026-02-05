@@ -133,7 +133,7 @@ def train_epoch(
             smooth_weight=0.05,
             symmetry_weight=0.02,
             range_weight=0.1,
-            perceptual_weight=0.15
+            perceptual_weight=0.15  # MediaPipe loss now properly scaled
         )
         
         # Backward pass

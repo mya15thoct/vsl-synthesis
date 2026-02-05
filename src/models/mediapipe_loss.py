@@ -173,16 +173,16 @@ class MediaPipePerceptualLoss(nn.Module):
                 
                 # Penalize if MediaPipe can't detect pose (invalid skeleton)
                 if features is None:
-                    total_loss += 1.0
+                    total_loss += 0.01  # Invalid skeleton (scaled down from 1.0)
                 else:
                     # Reward valid detection (MediaPipe recognizes it as human pose)
                     # Lower loss for valid skeletons
-                    total_loss += 0.1
+                    total_loss += 0.001  # Valid skeleton (scaled down from 0.1)
                 
                 valid_count += 1
         
         if valid_count == 0:
-            return torch.tensor(1.0, device=predicted_skeleton.device)
+            return torch.tensor(0.01, device=predicted_skeleton.device)
         
         avg_loss = total_loss / valid_count
         return torch.tensor(avg_loss, device=predicted_skeleton.device)
