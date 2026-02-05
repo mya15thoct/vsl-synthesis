@@ -255,6 +255,8 @@ def main():
                        help='Number of attention heads')
     parser.add_argument('--num_workers', type=int, default=4,
                        help='DataLoader workers')
+    parser.add_argument('--patience', type=int, default=10,
+                       help='Early stopping patience (epochs without improvement)')
     
     args = parser.parse_args()
     
@@ -325,8 +327,10 @@ def main():
     
     # Training loop
     print(f"\nStarting training for {args.epochs} epochs...")
+    print(f"Early stopping patience: {args.patience} epochs")
     
     best_val_loss = float('inf')
+    patience_counter = 0
     history = {'train_loss': [], 'val_loss': []}
     
     for epoch in range(1, args.epochs + 1):
@@ -356,8 +360,12 @@ def main():
         # Save checkpoint
         if val_loss < best_val_loss:
             best_val_loss = val_loss
+            patience_counter = 0
             model.save(str(output_dir / 'best.pt'))
-            print(f"  Saved best model (val_loss: {val_loss:.4f})")
+            print(f"  ✓ Saved best model (val_loss: {val_loss:.4f})")
+        else:
+            patience_counter += 1
+            print(f"  No improvement ({patience_counter}/{args.patience})")
         
         # Save latest
         model.save(str(output_dir / 'latest.pt'))
@@ -365,6 +373,13 @@ def main():
         # Save history
         with open(output_dir / 'history.json', 'w') as f:
             json.dump(history, f, indent=2)
+        
+        # Early stopping
+        if patience_counter >= args.patience:
+            print(f"\n⚠ Early stopping triggered after {epoch} epochs")
+            print(f"  No improvement for {args.patience} consecutive epochs")
+            print(f"  Best val loss: {best_val_loss:.4f}")
+            break
     
     print(f"\nTraining complete!")
     print(f"  Best val loss: {best_val_loss:.4f}")
