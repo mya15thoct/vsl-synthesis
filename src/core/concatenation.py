@@ -220,5 +220,5 @@ if __name__ == "__main__":
     # Example usage
     print("Concatenation module loaded successfully!")
     print("\nExample usage:")
-    print("  from src.synthesis.concatenation import concatenate_sequences")
+    print("  from src.core.concatenation import concatenate_sequences")
     print("  result = concatenate_sequences(['hello.npy', 'my.npy'], transition_frames=10)")

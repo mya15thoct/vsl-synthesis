@@ -98,30 +98,16 @@ def synthesize_sentence(
             from .methods.vsl_diffusion_adapter import VSLDiffusionGenerator
             vsl_diffusion = VSLDiffusionGenerator(model_path=model_path)
             vsl_diffusion.load_model()
-            use_vsl_diffusion = True
             print("   Using VSL-native diffusion model")
         except Exception as e:
-            print(f"   VSL diffusion not available: {e}")
-            print("   Falling back to MDM adapter")
-            from .methods.mdm_adapter import MDMTransitionGenerator
-            mdm = MDMTransitionGenerator(model_path=model_path)
-            try:
-                mdm.load_model()
-                use_vsl_diffusion = False
-            except Exception as e2:
-                raise RuntimeError(f"No diffusion model available. VSL: {e}, MDM: {e2}")
+            raise RuntimeError(f"VSL diffusion model not available: {e}")
         
         for i, (start_idx, end_idx, start_pose_idx, end_pose_idx) in enumerate(boundaries):
             start_pose = concatenated[start_pose_idx]
             end_pose = concatenated[end_pose_idx]
             
             print(f"   Transition {i+1}/{len(boundaries)}: frames {start_idx}-{end_idx}")
-            
-            if use_vsl_diffusion:
-                transition = vsl_diffusion.generate_transition(start_pose, end_pose, transition_frames)
-            else:
-                transition = mdm.generate_transition(start_pose, end_pose, transition_frames, use_mdm=True)
-            
+            transition = vsl_diffusion.generate_transition(start_pose, end_pose, transition_frames)
             concatenated[start_idx:end_idx] = transition
 
     

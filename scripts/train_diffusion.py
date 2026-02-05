@@ -26,6 +26,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.models.vsl_diffusion import VSLDiffusionModel
 from src.models.dataset import VSLTransitionDataset, collate_fn
+from src.models.skeleton_constraints import combined_constraint_loss
 
 
 def compute_metrics(predicted, target, mask=None):
@@ -110,17 +111,32 @@ def train_epoch(
         # Predict noise
         predicted_noise = model(noisy_data, timesteps, condition)
         
-        # Compute loss (only on valid frames)
+        # Compute MSE loss (only on valid frames)
         mask_expanded = mask.unsqueeze(-1)  # (batch, num_frames, 1)
         
         # Calculate number of valid elements (not just frames)
         num_valid_elements = mask_expanded.sum() * ground_truth.shape[-1]  # mask_sum * 1662
         
-        loss = F.mse_loss(
+        mse_loss = F.mse_loss(
             predicted_noise * mask_expanded,
             noise * mask_expanded,
             reduction='sum'
         ) / num_valid_elements
+        
+        # Add physical constraints to ensure realistic skeletons
+        # Denoise to get predicted skeleton for constraint calculation
+        predicted_skeleton = noisy_data - predicted_noise
+        
+        # Apply constraints (including perceptual loss)
+        loss, loss_dict = combined_constraint_loss(
+            predicted_skeleton,
+            mse_loss,
+            bone_weight=0.1,
+            smooth_weight=0.05,
+            symmetry_weight=0.02,
+            range_weight=0.1,
+            perceptual_weight=0.15
+        )
         
         # Backward pass
         optimizer.zero_grad()
@@ -142,8 +158,10 @@ def train_epoch(
         
         # Update progress bar
         pbar.set_postfix({
-            'loss': f"{loss.item():.4f}",
-            'mse': f"{metrics['mse']:.4f}"
+            'total': f"{loss.item():.4f}",
+            'mse': f"{loss_dict['mse']:.4f}",
+            'bone': f"{loss_dict['bone']:.4f}",
+            'percept': f"{loss_dict['perceptual']:.4f}"
         })
     
     # Average metrics

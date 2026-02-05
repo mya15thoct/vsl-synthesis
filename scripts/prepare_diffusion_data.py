@@ -22,16 +22,16 @@ from src.core.concatenation import load_skeleton_sequence
 
 def extract_transitions_from_video(
     video_path: Path,
-    window_size: int = 20,
+    window_sizes: list = [5, 10, 15, 20],
     stride: int = 5,
     min_frames: int = 15
 ):
     """
-    Extract transition examples from a single word video.
+    Extract transition examples from a single word video with multiple scales.
     
     Args:
         video_path: Path to .npy video file
-        window_size: Number of frames per transition
+        window_sizes: List of transition lengths to extract (multi-scale)
         stride: Step size for sliding window
         min_frames: Minimum video length to process
         
@@ -54,22 +54,29 @@ def extract_transitions_from_video(
         if num_frames < min_frames:
             return
         
-        # Extract transitions with sliding window
-        for start_idx in range(0, num_frames - window_size + 1, stride):
-            end_idx = start_idx + window_size
-            transition = video_flat[start_idx:end_idx]
-            
-            yield {
-                'start_pose': transition[0],      # (1662,)
-                'end_pose': transition[-1],       # (1662,)
-                'ground_truth': transition[1:-1], # (window_size-2, 1662)
-                'metadata': {
-                    'source_video': str(video_path.name),
-                    'start_frame': start_idx,
-                    'end_frame': end_idx,
-                    'num_frames': window_size
+        # Extract transitions with multiple window sizes
+        for window_size in window_sizes:
+            # Skip if video too short for this window
+            if num_frames < window_size:
+                continue
+                
+            # Extract transitions with sliding window
+            for start_idx in range(0, num_frames - window_size + 1, stride):
+                end_idx = start_idx + window_size
+                transition = video_flat[start_idx:end_idx]
+                
+                yield {
+                    'start_pose': transition[0],      # (1662,)
+                    'end_pose': transition[-1],       # (1662,)
+                    'ground_truth': transition[1:-1], # (window_size-2, 1662)
+                    'num_frames': window_size - 2,    # Actual transition length
+                    'metadata': {
+                        'source_video': str(video_path.name),
+                        'start_frame': start_idx,
+                        'end_frame': end_idx,
+                        'window_size': window_size
+                    }
                 }
-            }
     except Exception as e:
         print(f"Error processing {video_path}: {e}")
         return
@@ -141,7 +148,7 @@ def prepare_dataset(
         transitions_found = 0
         for transition in extract_transitions_from_video(
             video_path, 
-            window_size=window_size, 
+            window_sizes=[7, 12, 17, 22],  # Multi-scale: 5, 10, 15, 20 frame transitions
             stride=stride
         ):
             if is_train:
