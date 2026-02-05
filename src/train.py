@@ -5,7 +5,7 @@ Training Script for VSL Diffusion Model
 Self-supervised training on transition examples extracted from word videos.
 
 Usage:
-    python scripts/train_diffusion.py --data_dir data/diffusion --epochs 50
+    python src/train.py --data_dir data/diffusion --epochs 50
 """
 
 import argparse
@@ -17,16 +17,14 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from diffusers import DDPMScheduler
 from pathlib import Path
-import sys
 from tqdm import tqdm
 import json
 import numpy as np
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from src.models.vsl_diffusion import VSLDiffusionModel
-from src.models.dataset import VSLTransitionDataset, collate_fn
-from src.models.skeleton_constraints import combined_constraint_loss
+# Import from same package
+from models.vsl_diffusion import VSLDiffusionModel
+from models.dataset import VSLTransitionDataset, collate_fn
+from models.skeleton_constraints import combined_constraint_loss
 
 
 def compute_metrics(predicted, target, mask=None):
@@ -304,7 +302,7 @@ def main():
     print(f"  Parameters: {num_params:,}")
     
     # Create diffusion scheduler (use custom implementation to avoid numpy issues)
-    from src.models.custom_scheduler import SimpleDDPMScheduler
+    from models.custom_scheduler import SimpleDDPMScheduler
     
     scheduler_diffusion = SimpleDDPMScheduler(
         num_train_timesteps=1000,

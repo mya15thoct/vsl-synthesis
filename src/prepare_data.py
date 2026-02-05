@@ -5,7 +5,7 @@ Data Preprocessing for VSL Diffusion Model
 Extract transition examples from word videos for self-supervised training.
 
 Usage:
-    python scripts/prepare_diffusion_data.py --data_dir /mnt/ngan/vsl_data/sequences
+    python src/prepare_data.py --data_dir /mnt/ngan/vsl_data/sequences
 """
 
 import argparse
@@ -13,11 +13,9 @@ import json
 import numpy as np
 from pathlib import Path
 from tqdm import tqdm
-import sys
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from src.core.concatenation import load_skeleton_sequence
+# Import from same package
+from core.concatenation import load_skeleton_sequence
 
 
 def extract_transitions_from_video(
