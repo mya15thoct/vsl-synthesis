@@ -133,15 +133,9 @@ class VSLDiffusionGenerator:
         # Convert back to numpy
         transition = x_t[0].cpu().numpy()  # (num_frames, 1662)
         
-        # Normalize to 0-1 range using min-max scaling (preserve structure better than clipping)
-        # This ensures coordinates are in valid range while maintaining relative positions
-        min_val = transition.min()
-        max_val = transition.max()
-        if max_val > min_val:
-            transition = (transition - min_val) / (max_val - min_val)
-        else:
-            # If all values are the same, just clip to 0-1
-            transition = np.clip(transition, 0.0, 1.0)
+        # Clip to valid range [0, 1] to preserve skeleton structure
+        # Don't use min-max normalization as it destroys relative positions
+        transition = np.clip(transition, 0.0, 1.0)
         
         # Reshape to (num_frames, 554, 3)
         transition = transition.reshape(num_frames, 554, 3)
