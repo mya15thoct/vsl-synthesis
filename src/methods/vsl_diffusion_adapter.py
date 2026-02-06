@@ -133,14 +133,27 @@ class VSLDiffusionGenerator:
         # Convert back to numpy
         transition = x_t[0].cpu().numpy()  # (num_frames, 1662)
         
+        # Debug: Check raw model output
+        print(f"\n[DEBUG] Raw model output:")
+        print(f"  Shape: {transition.shape}")
+        print(f"  Min: {transition.min():.4f}, Max: {transition.max():.4f}")
+        print(f"  Mean: {transition.mean():.4f}, Std: {transition.std():.4f}")
+        print(f"  Sample values: {transition[0, :10]}")
+        
         # Clip to valid range [0, 1] to preserve skeleton structure
         # Don't use min-max normalization as it destroys relative positions
-        transition = np.clip(transition, 0.0, 1.0)
+        transition_clipped = np.clip(transition, 0.0, 1.0)
+        
+        print(f"\n[DEBUG] After clipping:")
+        print(f"  Min: {transition_clipped.min():.4f}, Max: {transition_clipped.max():.4f}")
+        print(f"  Mean: {transition_clipped.mean():.4f}, Std: {transition_clipped.std():.4f}")
+        print(f"  Num zeros: {(transition_clipped == 0).sum()}")
+        print(f"  Num ones: {(transition_clipped == 1).sum()}")
         
         # Reshape to (num_frames, 554, 3)
-        transition = transition.reshape(num_frames, 554, 3)
+        transition_clipped = transition_clipped.reshape(num_frames, 554, 3)
         
-        return transition
+        return transition_clipped
 
 
 # Convenience function for direct use
