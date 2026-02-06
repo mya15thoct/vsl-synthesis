@@ -83,12 +83,13 @@ def train_epoch(
     
     pbar = tqdm(dataloader, desc=f"Epoch {epoch}")
     
-    for batch_idx, (start_pose, end_pose, ground_truth, mask) in enumerate(pbar):
+    for batch_idx, (start_pose, end_pose, ground_truth, mask, target_length) in enumerate(pbar):
         # Move to device
         start_pose = start_pose.to(device)
         end_pose = end_pose.to(device)
         ground_truth = ground_truth.to(device)
         mask = mask.to(device)
+        target_length = target_length.to(device)
         
         batch_size, num_frames, _ = ground_truth.shape
         
@@ -106,8 +107,8 @@ def train_epoch(
         # Create condition (concatenate start + end poses)
         condition = torch.cat([start_pose, end_pose], dim=-1)
         
-        # Predict noise
-        predicted_noise = model(noisy_data, timesteps, condition)
+        # Predict noise (with length conditioning)
+        predicted_noise = model(noisy_data, timesteps, condition, target_length)
         
         # Compute MSE loss (only on valid frames)
         mask_expanded = mask.unsqueeze(-1)  # (batch, num_frames, 1)
@@ -177,11 +178,12 @@ def validate(model, dataloader, scheduler_diffusion, device):
     total_metrics = {'mse': 0, 'smoothness': 0, 'jerk': 0}
     
     with torch.no_grad():
-        for start_pose, end_pose, ground_truth, mask in tqdm(dataloader, desc="Validating"):
+        for start_pose, end_pose, ground_truth, mask, target_length in tqdm(dataloader, desc="Validating"):
             start_pose = start_pose.to(device)
             end_pose = end_pose.to(device)
             ground_truth = ground_truth.to(device)
             mask = mask.to(device)
+            target_length = target_length.to(device)
             
             batch_size, num_frames, _ = ground_truth.shape
             
@@ -196,9 +198,9 @@ def validate(model, dataloader, scheduler_diffusion, device):
             noise = torch.randn_like(ground_truth)
             noisy_data = scheduler_diffusion.add_noise(ground_truth, noise, timesteps)
             
-            # Predict
+            # Predict (with length conditioning)
             condition = torch.cat([start_pose, end_pose], dim=-1)
-            predicted_noise = model(noisy_data, timesteps, condition)
+            predicted_noise = model(noisy_data, timesteps, condition, target_length)
             
             # Compute MSE loss
             mask_expanded = mask.unsqueeze(-1)

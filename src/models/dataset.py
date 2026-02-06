@@ -44,12 +44,13 @@ class VSLTransitionDataset(Dataset):
     def __len__(self) -> int:
         return len(self.transition_files)
     
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, int]:
         """
         Returns:
             start_pose: (1662,)
             end_pose: (1662,)
             ground_truth: (num_frames, 1662)
+            target_length: int - number of frames in ground_truth
         """
         # Load transition
         data = np.load(self.transition_files[idx])
@@ -60,7 +61,10 @@ class VSLTransitionDataset(Dataset):
         end_pose = torch.tensor(data['end_pose'], dtype=torch.float32)
         ground_truth = torch.tensor(data['ground_truth'], dtype=torch.float32)
         
-        return start_pose, end_pose, ground_truth
+        # Get target length (number of frames)
+        target_length = ground_truth.shape[0]
+        
+        return start_pose, end_pose, ground_truth, target_length
 
 
 def collate_fn(batch):
@@ -69,7 +73,7 @@ def collate_fn(batch):
     
     Pads sequences to the same length within a batch.
     """
-    start_poses, end_poses, ground_truths = zip(*batch)
+    start_poses, end_poses, ground_truths, target_lengths = zip(*batch)
     
     # Stack start/end poses (all same size)
     start_poses = torch.stack(start_poses)
@@ -103,7 +107,10 @@ def collate_fn(batch):
     padded_gts = torch.stack(padded_gts)
     masks = torch.stack(masks)
     
-    return start_poses, end_poses, padded_gts, masks
+    # Convert target lengths to tensor
+    target_lengths = torch.tensor(target_lengths, dtype=torch.long)
+    
+    return start_poses, end_poses, padded_gts, masks, target_lengths
 
 
 if __name__ == "__main__":

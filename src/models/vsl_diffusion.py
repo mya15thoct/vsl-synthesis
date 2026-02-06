@@ -130,11 +130,17 @@ class VSLDiffusionModel(nn.Module):
         self.condition_encoder = nn.Sequential(
             nn.Linear(input_dim * 2, hidden_dim),
             nn.SiLU(),
-            nn.Linear(hidden_dim, hidden_dim // 2)
+            nn.Linear(hidden_dim, hidden_dim // 4)
         )
         
         # Timestep embedding
-        self.time_embed = SinusoidalPositionEmbedding(hidden_dim // 2)
+        self.time_embed = SinusoidalPositionEmbedding(hidden_dim // 4)
+        
+        # Length embedding (for target sequence length)
+        self.length_embed = nn.Embedding(
+            num_embeddings=max_frames + 1,  # Support lengths 0 to max_frames
+            embedding_dim=hidden_dim // 4
+        )
         
         # Input projection
         self.input_proj = nn.Linear(input_dim, hidden_dim)
@@ -161,7 +167,8 @@ class VSLDiffusionModel(nn.Module):
         self,
         noisy_data: torch.Tensor,
         timesteps: torch.Tensor,
-        condition: torch.Tensor
+        condition: torch.Tensor,
+        target_length: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
         Forward pass for denoising.
@@ -170,6 +177,7 @@ class VSLDiffusionModel(nn.Module):
             noisy_data: (batch, num_frames, 1662) noisy skeleton sequence
             timesteps: (batch,) timestep indices [0, 999]
             condition: (batch, 1662*2) concatenated start/end poses
+            target_length: (batch,) target sequence lengths (optional, defaults to actual length)
             
         Returns:
             predicted_noise: (batch, num_frames, 1662)
@@ -177,13 +185,20 @@ class VSLDiffusionModel(nn.Module):
         batch_size, num_frames, _ = noisy_data.shape
         
         # Encode condition (start + end poses)
-        cond_emb = self.condition_encoder(condition)  # (batch, hidden_dim//2)
+        cond_emb = self.condition_encoder(condition)  # (batch, hidden_dim//4)
         
         # Encode timestep
-        time_emb = self.time_embed(timesteps)  # (batch, hidden_dim//2)
+        time_emb = self.time_embed(timesteps)  # (batch, hidden_dim//4)
         
-        # Combine condition and time embeddings
-        context = torch.cat([cond_emb, time_emb], dim=-1)  # (batch, hidden_dim)
+        # Encode target length (if not provided, use actual sequence length)
+        if target_length is None:
+            target_length = torch.full((batch_size,), num_frames, dtype=torch.long, device=noisy_data.device)
+        length_emb = self.length_embed(target_length)  # (batch, hidden_dim//4)
+        
+        # Combine condition, time, and length embeddings
+        # Reserve hidden_dim//4 for future extensions
+        padding = torch.zeros(batch_size, self.hidden_dim // 4, device=noisy_data.device)
+        context = torch.cat([cond_emb, time_emb, length_emb, padding], dim=-1)  # (batch, hidden_dim)
         context = context.unsqueeze(1)  # (batch, 1, hidden_dim)
         
         # Project input
