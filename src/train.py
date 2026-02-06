@@ -126,7 +126,7 @@ def train_epoch(
         # Denoise to get predicted skeleton for constraint calculation
         predicted_skeleton = noisy_data - predicted_noise
         
-        # Apply constraints (including perceptual loss)
+        # Apply constraints (perceptual loss now fixed with proper normalization)
         loss, loss_dict = combined_constraint_loss(
             predicted_skeleton,
             mse_loss,
@@ -134,7 +134,7 @@ def train_epoch(
             smooth_weight=0.05,
             symmetry_weight=0.02,
             range_weight=0.1,
-            perceptual_weight=0.15  # MediaPipe loss now properly scaled
+            perceptual_weight=0.15  # Re-enabled with normalization fix
         )
         
         # Backward pass
@@ -221,7 +221,7 @@ def validate(model, dataloader, scheduler_diffusion, device):
                 smooth_weight=0.05,
                 symmetry_weight=0.02,
                 range_weight=0.1,
-                perceptual_weight=0.15
+                perceptual_weight=0.15  # Re-enabled with fix
             )
             
             # Metrics

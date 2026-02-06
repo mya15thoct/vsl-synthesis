@@ -335,9 +335,10 @@ def perceptual_loss(skeleton_flat):
         mp_loss = mediapipe_perceptual_loss(skeleton_flat)
         
         # Add custom rule-based losses (30% weight)
-        pose_loss = pose_validity_loss(skeleton_flat)
-        hand_loss = hand_coherence_loss(skeleton_flat)
-        motion_loss = motion_naturalness_loss(skeleton_flat)
+        # IMPORTANT: Normalize custom losses to match MediaPipe scale (0.001-0.01)
+        pose_loss = pose_validity_loss(skeleton_flat) / 100.0  # Normalize
+        hand_loss = hand_coherence_loss(skeleton_flat) / 100.0  # Normalize
+        motion_loss = motion_naturalness_loss(skeleton_flat) / 100.0  # Normalize
         
         custom_loss = 0.3 * pose_loss + 0.3 * hand_loss + 0.4 * motion_loss
         
@@ -351,9 +352,10 @@ def perceptual_loss(skeleton_flat):
             print(f"Note: Using custom perceptual loss (MediaPipe: {e})")
             perceptual_loss._warned = True
         
-        pose_loss = pose_validity_loss(skeleton_flat)
-        hand_loss = hand_coherence_loss(skeleton_flat)
-        motion_loss = motion_naturalness_loss(skeleton_flat)
+        # Normalize custom losses
+        pose_loss = pose_validity_loss(skeleton_flat) / 100.0
+        hand_loss = hand_coherence_loss(skeleton_flat) / 100.0
+        motion_loss = motion_naturalness_loss(skeleton_flat) / 100.0
         total = 0.3 * pose_loss + 0.3 * hand_loss + 0.4 * motion_loss
     
     return total
