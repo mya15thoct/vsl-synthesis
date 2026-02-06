@@ -138,22 +138,26 @@ class VSLDiffusionGenerator:
         print(f"  Shape: {transition.shape}")
         print(f"  Min: {transition.min():.4f}, Max: {transition.max():.4f}")
         print(f"  Mean: {transition.mean():.4f}, Std: {transition.std():.4f}")
-        print(f"  Sample values: {transition[0, :10]}")
         
-        # Clip to valid range [0, 1] to preserve skeleton structure
-        # Don't use min-max normalization as it destroys relative positions
-        transition_clipped = np.clip(transition, 0.0, 1.0)
+        # Normalize to [0, 1] using min-max scaling
+        # This preserves the relative structure while bringing values into valid range
+        min_val = transition.min()
+        max_val = transition.max()
         
-        print(f"\n[DEBUG] After clipping:")
-        print(f"  Min: {transition_clipped.min():.4f}, Max: {transition_clipped.max():.4f}")
-        print(f"  Mean: {transition_clipped.mean():.4f}, Std: {transition_clipped.std():.4f}")
-        print(f"  Num zeros: {(transition_clipped == 0).sum()}")
-        print(f"  Num ones: {(transition_clipped == 1).sum()}")
+        if max_val > min_val:
+            transition_normalized = (transition - min_val) / (max_val - min_val)
+        else:
+            # All values are the same, just set to 0.5
+            transition_normalized = np.full_like(transition, 0.5)
+        
+        print(f"\n[DEBUG] After normalization:")
+        print(f"  Min: {transition_normalized.min():.4f}, Max: {transition_normalized.max():.4f}")
+        print(f"  Mean: {transition_normalized.mean():.4f}, Std: {transition_normalized.std():.4f}")
         
         # Reshape to (num_frames, 554, 3)
-        transition_clipped = transition_clipped.reshape(num_frames, 554, 3)
+        transition_normalized = transition_normalized.reshape(num_frames, 554, 3)
         
-        return transition_clipped
+        return transition_normalized
 
 
 # Convenience function for direct use
