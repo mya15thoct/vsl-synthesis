@@ -18,6 +18,38 @@ from tqdm import tqdm
 from core.concatenation import load_skeleton_sequence
 
 
+def normalize_skeleton(skeleton):
+    """
+    Normalize skeleton coordinates to [0, 1] range.
+    
+    Args:
+        skeleton: (frames, 1662) or (frames, 554, 3) skeleton data
+        
+    Returns:
+        Normalized skeleton in same shape, values in [0, 1]
+    """
+    original_shape = skeleton.shape
+    
+    # Flatten if needed
+    if skeleton.ndim == 3:
+        skeleton_flat = skeleton.reshape(skeleton.shape[0], -1)
+    else:
+        skeleton_flat = skeleton
+    
+    # Normalize to [0, 1] using min-max scaling
+    min_val = skeleton_flat.min()
+    max_val = skeleton_flat.max()
+    
+    if max_val > min_val:
+        normalized = (skeleton_flat - min_val) / (max_val - min_val)
+    else:
+        # All values are the same, set to 0.5
+        normalized = np.full_like(skeleton_flat, 0.5)
+    
+    # Reshape back to original shape
+    return normalized.reshape(original_shape)
+
+
 def extract_transitions_from_video(
     video_path: Path,
     window_sizes: list = [5, 10, 15, 20],
@@ -63,10 +95,13 @@ def extract_transitions_from_video(
                 end_idx = start_idx + window_size
                 transition = video_flat[start_idx:end_idx]
                 
+                # Normalize transition to [0, 1]
+                transition_normalized = normalize_skeleton(transition)
+                
                 yield {
-                    'start_pose': transition[0],      # (1662,)
-                    'end_pose': transition[-1],       # (1662,)
-                    'ground_truth': transition[1:-1], # (window_size-2, 1662)
+                    'start_pose': transition_normalized[0],      # (1662,)
+                    'end_pose': transition_normalized[-1],       # (1662,)
+                    'ground_truth': transition_normalized[1:-1], # (window_size-2, 1662)
                     'num_frames': window_size - 2,    # Actual transition length
                     'metadata': {
                         'source_video': str(video_path.name),
@@ -217,7 +252,7 @@ def main():
     parser.add_argument(
         '--output_dir',
         type=str,
-        default='data/diffusion',
+        default='/mnt/ngan/vsl_data/diffusion',
         help='Output directory for processed data'
     )
     parser.add_argument(
