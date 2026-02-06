@@ -120,12 +120,15 @@ class VSLDiffusionGenerator:
         # Start with random noise
         x_t = torch.randn(1, num_frames, 1662, device=self.device)
         
+        # Create target_length tensor for length conditioning
+        target_length = torch.tensor([num_frames], dtype=torch.long, device=self.device)
+        
         # Denoising loop
         with torch.no_grad():
             for t in self.scheduler.timesteps:
-                # Predict noise
+                # Predict noise (with length conditioning)
                 t_tensor = torch.tensor([t], device=self.device).long()
-                noise_pred = self.model(x_t, t_tensor, condition)
+                noise_pred = self.model(x_t, t_tensor, condition, target_length)
                 
                 # Denoise step
                 x_t = self.scheduler.step(noise_pred, t, x_t).prev_sample
