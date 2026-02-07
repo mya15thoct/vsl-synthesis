@@ -26,8 +26,8 @@ def extract_keypoints_from_video(video_path: Path, holistic) -> np.ndarray:
         holistic: MediaPipe Holistic instance
         
     Returns:
-        Keypoints array of shape (frames, 554, 3)
-        - 554 keypoints: 33 pose + 468 face + 21 left_hand + 21 right_hand + 11 padding
+        Keypoints array of shape (frames, 543, 3)
+        - 543 keypoints: 33 pose + 468 face + 21 left_hand + 21 right_hand
         - 3 coordinates: x, y, z (normalized)
     """
     cap = cv2.VideoCapture(str(video_path))
@@ -49,6 +49,7 @@ def extract_keypoints_from_video(video_path: Path, holistic) -> np.ndarray:
         results = holistic.process(frame_rgb)
         
         # Extract keypoints in standard MediaPipe order
+        # Total: 33 pose + 468 face + 21 left_hand + 21 right_hand = 543 keypoints
         keypoints = []
         
         # 1. Pose landmarks (33 keypoints)
@@ -80,17 +81,14 @@ def extract_keypoints_from_video(video_path: Path, holistic) -> np.ndarray:
         else:
             keypoints.extend([0.0] * (21 * 3))
         
-        # 5. Padding to reach 554 keypoints (11 * 3 = 33 values)
-        # 33 + 468 + 21 + 21 = 543, need 11 more to reach 554
-        keypoints.extend([0.0] * (11 * 3))
-        
         frames_keypoints.append(keypoints)
     
     cap.release()
     
     # Convert to numpy array and reshape
-    keypoints_array = np.array(frames_keypoints, dtype=np.float32)  # (frames, 1662)
-    keypoints_array = keypoints_array.reshape(-1, 554, 3)  # (frames, 554, 3)
+    # 543 keypoints * 3 coords = 1629 values per frame
+    keypoints_array = np.array(frames_keypoints, dtype=np.float32)  # (frames, 1629)
+    keypoints_array = keypoints_array.reshape(-1, 543, 3)  # (frames, 543, 3)
     
     return keypoints_array
 
