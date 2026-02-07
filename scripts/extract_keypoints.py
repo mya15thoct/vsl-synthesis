@@ -52,7 +52,7 @@ def extract_keypoints_from_video(video_path: Path, holistic) -> np.ndarray:
         # Total: 33 pose + 468 face + 21 left_hand + 21 right_hand = 543 keypoints
         keypoints = []
         
-        # 1. Pose landmarks (33 keypoints)
+        # 1. Pose landmarks (33 keypoints, only x,y,z - skip visibility)
         if results.pose_landmarks:
             for landmark in results.pose_landmarks.landmark:
                 keypoints.extend([landmark.x, landmark.y, landmark.z])
