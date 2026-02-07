@@ -26,8 +26,8 @@ def extract_keypoints_from_video(video_path: Path, holistic) -> np.ndarray:
         holistic: MediaPipe Holistic instance
         
     Returns:
-        Keypoints array of shape (frames, 543, 3)
-        - 543 keypoints: 33 pose + 468 face + 21 left_hand + 21 right_hand
+        Keypoints array of shape (frames, 553, 3)
+        - 553 keypoints: 33 pose + 478 face + 21 left_hand + 21 right_hand
         - 3 coordinates: x, y, z (normalized)
     """
     cap = cv2.VideoCapture(str(video_path))
@@ -49,7 +49,7 @@ def extract_keypoints_from_video(video_path: Path, holistic) -> np.ndarray:
         results = holistic.process(frame_rgb)
         
         # Extract keypoints in standard MediaPipe order
-        # Total: 33 pose + 468 face + 21 left_hand + 21 right_hand = 543 keypoints
+        # Total: 33 pose + 478 face + 21 left_hand + 21 right_hand = 553 keypoints
         keypoints = []
         
         # 1. Pose landmarks (33 keypoints, only x,y,z - skip visibility)
@@ -60,12 +60,12 @@ def extract_keypoints_from_video(video_path: Path, holistic) -> np.ndarray:
             # Fill with zeros if not detected
             keypoints.extend([0.0] * (33 * 3))
         
-        # 2. Face landmarks (468 keypoints)
+        # 2. Face landmarks (478 keypoints with refine_face_landmarks=True)
         if results.face_landmarks:
             for landmark in results.face_landmarks.landmark:
                 keypoints.extend([landmark.x, landmark.y, landmark.z])
         else:
-            keypoints.extend([0.0] * (468 * 3))
+            keypoints.extend([0.0] * (478 * 3))
         
         # 3. Left hand landmarks (21 keypoints)
         if results.left_hand_landmarks:
@@ -89,21 +89,21 @@ def extract_keypoints_from_video(video_path: Path, holistic) -> np.ndarray:
     keypoints_array = np.array(frames_keypoints, dtype=np.float32)
     
     # Debug: Check array shape before reshape
-    expected_size = len(frames_keypoints) * 543 * 3
+    expected_size = len(frames_keypoints) * 553 * 3
     actual_size = keypoints_array.size
     
     if actual_size != expected_size:
         raise ValueError(
             f"Keypoint array size mismatch!\n"
             f"  Frames: {len(frames_keypoints)}\n"
-            f"  Expected size: {expected_size} ({len(frames_keypoints)} frames * 543 keypoints * 3 coords)\n"
+            f"  Expected size: {expected_size} ({len(frames_keypoints)} frames * 553 keypoints * 3 coords)\n"
             f"  Actual size: {actual_size}\n"
             f"  First frame length: {len(frames_keypoints[0]) if frames_keypoints else 0}\n"
-            f"  Expected per frame: 1629 (543 * 3)"
+            f"  Expected per frame: 1659 (553 * 3)"
         )
     
-    # Reshape to (frames, 543, 3)
-    keypoints_array = keypoints_array.reshape(-1, 543, 3)
+    # Reshape to (frames, 553, 3)
+    keypoints_array = keypoints_array.reshape(-1, 553, 3)
     
     return keypoints_array
 
