@@ -81,13 +81,13 @@ class VSLDiffusionGenerator:
         Generate smooth transition between two poses.
         
         Args:
-            start_pose: Starting pose in VSL format (1662,) or (554, 3)
+            start_pose: Starting pose in VSL format (1659,) or (553, 3)
             end_pose: Ending pose in VSL format
             num_frames: Number of frames to generate
             use_mdm: Ignored (kept for API compatibility)
             
         Returns:
-            Transition sequence (num_frames, 554, 3)
+            Transition sequence (num_frames, 553, 3)
             
         Raises:
             RuntimeError: If model is not loaded
@@ -107,8 +107,8 @@ class VSLDiffusionGenerator:
             end_pose_flat = end_pose
         
         # Ensure correct size
-        if len(start_pose_flat) != 1662:
-            raise ValueError(f"Expected 1662 features, got {len(start_pose_flat)}")
+        if len(start_pose_flat) != 1659:
+            raise ValueError(f"Expected 1659 features, got {len(start_pose_flat)}")
         
         # Convert to tensors (use torch.tensor to avoid numpy 1.23.5 issue)
         start_tensor = torch.tensor(start_pose_flat, dtype=torch.float32, device=self.device)
@@ -118,7 +118,7 @@ class VSLDiffusionGenerator:
         condition = torch.cat([start_tensor, end_tensor], dim=-1).unsqueeze(0)  # (1, 3324)
         
         # Start with random noise
-        x_t = torch.randn(1, num_frames, 1662, device=self.device)
+        x_t = torch.randn(1, num_frames, 1659, device=self.device)
         
         # Create target_length tensor for length conditioning
         target_length = torch.tensor([num_frames], dtype=torch.long, device=self.device)
@@ -134,7 +134,7 @@ class VSLDiffusionGenerator:
                 x_t = self.scheduler.step(noise_pred, t, x_t).prev_sample
         
         # Convert back to numpy
-        transition = x_t[0].cpu().numpy()  # (num_frames, 1662)
+        transition = x_t[0].cpu().numpy()  # (num_frames, 1659)
         
         # Debug: Check raw model output
         print(f"\n[DEBUG] Raw model output:")
@@ -157,8 +157,8 @@ class VSLDiffusionGenerator:
         print(f"  Min: {transition_normalized.min():.4f}, Max: {transition_normalized.max():.4f}")
         print(f"  Mean: {transition_normalized.mean():.4f}, Std: {transition_normalized.std():.4f}")
         
-        # Reshape to (num_frames, 554, 3)
-        transition_normalized = transition_normalized.reshape(num_frames, 554, 3)
+        # Reshape to (num_frames, 553, 3)
+        transition_normalized = transition_normalized.reshape(num_frames, 553, 3)
         
         return transition_normalized
 
@@ -180,7 +180,7 @@ def generate_transition_vsl(
         model_path: Path to trained model checkpoint
         
     Returns:
-        Transition sequence (num_frames, 554, 3)
+        Transition sequence (num_frames, 553, 3)
     """
     generator = VSLDiffusionGenerator(model_path=model_path)
     generator.load_model()
@@ -194,8 +194,8 @@ if __name__ == "__main__":
     # Test with dummy data
     print("\nTesting with dummy data...")
     
-    start_pose = np.random.rand(1662).astype(np.float32)
-    end_pose = np.random.rand(1662).astype(np.float32)
+    start_pose = np.random.rand(1659).astype(np.float32)
+    end_pose = np.random.rand(1659).astype(np.float32)
     
     print(f"Start pose shape: {start_pose.shape}")
     print(f"End pose shape: {end_pose.shape}")

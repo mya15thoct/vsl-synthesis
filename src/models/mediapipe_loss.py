@@ -41,7 +41,7 @@ class MediaPipePerceptualLoss(nn.Module):
         Convert skeleton to image for MediaPipe processing.
         
         Args:
-            skeleton_flat: (1662,) flattened skeleton
+            skeleton_flat: (1659,) flattened skeleton
             
         Returns:
             image: (H, W, 3) RGB image with skeleton drawn
@@ -90,7 +90,7 @@ class MediaPipePerceptualLoss(nn.Module):
         Extract features using MediaPipe pretrained model.
         
         Args:
-            skeleton_flat: (1662,) numpy array
+            skeleton_flat: (1659,) numpy array
             
         Returns:
             features: dict of MediaPipe landmarks or None if detection fails
@@ -149,8 +149,8 @@ class MediaPipePerceptualLoss(nn.Module):
         Compute perceptual loss using MediaPipe.
         
         Args:
-            predicted_skeleton: (batch, num_frames, 1662) predicted skeleton
-            target_skeleton: (batch, num_frames, 1662) optional target skeleton
+            predicted_skeleton: (batch, num_frames, 1659) predicted skeleton
+            target_skeleton: (batch, num_frames, 1659) optional target skeleton
             
         Returns:
             loss: scalar tensor
@@ -209,8 +209,8 @@ def mediapipe_perceptual_loss(predicted_skeleton, target_skeleton=None):
     Compute MediaPipe-based perceptual loss.
     
     Args:
-        predicted_skeleton: (batch, num_frames, 1662)
-        target_skeleton: (batch, num_frames, 1662) optional
+        predicted_skeleton: (batch, num_frames, 1659)
+        target_skeleton: (batch, num_frames, 1659) optional
         
     Returns:
         loss: scalar tensor

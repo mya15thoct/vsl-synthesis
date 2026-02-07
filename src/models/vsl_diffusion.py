@@ -2,7 +2,7 @@
 VSL-Native Diffusion Model for Sign Language Transition Generation
 
 This module implements a transformer-based diffusion model trained directly
-on VSL skeleton format (1662 features) for generating smooth transitions.
+on VSL skeleton format (1659 features) for generating smooth transitions.
 """
 
 import torch
@@ -100,17 +100,17 @@ class VSLDiffusionModel(nn.Module):
         - Output projection: Maps back to VSL format
     
     Input:
-        - noisy_data: (batch, num_frames, 1662) noisy skeleton sequence
+        - noisy_data: (batch, num_frames, 1659) noisy skeleton sequence
         - timesteps: (batch,) diffusion timestep indices
-        - condition: (batch, 1662*2) concatenated start/end poses
+        - condition: (batch, 1659*2) concatenated start/end poses
         
     Output:
-        - predicted_noise: (batch, num_frames, 1662) predicted noise
+        - predicted_noise: (batch, num_frames, 1659) predicted noise
     """
     
     def __init__(
         self,
-        input_dim: int = 1662,
+        input_dim: int = 1659,
         hidden_dim: int = 512,
         num_layers: int = 8,
         num_heads: int = 8,
@@ -174,13 +174,13 @@ class VSLDiffusionModel(nn.Module):
         Forward pass for denoising.
         
         Args:
-            noisy_data: (batch, num_frames, 1662) noisy skeleton sequence
+            noisy_data: (batch, num_frames, 1659) noisy skeleton sequence
             timesteps: (batch,) timestep indices [0, 999]
-            condition: (batch, 1662*2) concatenated start/end poses
+            condition: (batch, 1659*2) concatenated start/end poses
             target_length: (batch,) target sequence lengths (optional, defaults to actual length)
             
         Returns:
-            predicted_noise: (batch, num_frames, 1662)
+            predicted_noise: (batch, num_frames, 1659)
         """
         batch_size, num_frames, _ = noisy_data.shape
         
@@ -215,7 +215,7 @@ class VSLDiffusionModel(nn.Module):
             x = block(x)
         
         # Project to output
-        predicted_noise = self.output_proj(x)  # (batch, num_frames, 1662)
+        predicted_noise = self.output_proj(x)  # (batch, num_frames, 1659)
         
         return predicted_noise
     
@@ -241,7 +241,7 @@ class VSLDiffusionModel(nn.Module):
         
         # Handle old checkpoints without full config
         model = cls(
-            input_dim=config.get('input_dim', 1662),
+            input_dim=config.get('input_dim', 1659),
             hidden_dim=config.get('hidden_dim', 512),
             num_layers=config.get('num_layers', 8),
             num_heads=config.get('num_heads', 8),
@@ -260,7 +260,7 @@ if __name__ == "__main__":
     
     batch_size = 4
     num_frames = 18
-    input_dim = 1662
+    input_dim = 1659
     
     # Create dummy inputs
     noisy_data = torch.randn(batch_size, num_frames, input_dim)

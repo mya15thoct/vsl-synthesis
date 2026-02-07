@@ -17,9 +17,9 @@ class VSLTransitionDataset(Dataset):
     Dataset for VSL transition training.
     
     Each example contains:
-        - start_pose: (1662,) starting pose
-        - end_pose: (1662,) ending pose
-        - ground_truth: (num_frames, 1662) ground truth transition
+        - start_pose: (1659,) starting pose
+        - end_pose: (1659,) ending pose
+        - ground_truth: (num_frames, 1659) ground truth transition
     """
     
     def __init__(self, data_dir: str, split: str = 'train'):
@@ -47,9 +47,9 @@ class VSLTransitionDataset(Dataset):
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, int]:
         """
         Returns:
-            start_pose: (1662,)
-            end_pose: (1662,)
-            ground_truth: (num_frames, 1662)
+            start_pose: (1659,)
+            end_pose: (1659,)
+            ground_truth: (num_frames, 1659)
             target_length: int - number of frames in ground_truth
         """
         # Load transition

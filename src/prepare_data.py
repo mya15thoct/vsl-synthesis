@@ -23,7 +23,7 @@ def normalize_skeleton(skeleton):
     Normalize skeleton coordinates to [0, 1] range.
     
     Args:
-        skeleton: (frames, 1662) or (frames, 554, 3) skeleton data
+        skeleton: (frames, 1659) or (frames, 553, 3) skeleton data
         
     Returns:
         Normalized skeleton in same shape, values in [0, 1]
@@ -72,7 +72,7 @@ def extract_transitions_from_video(
         # Load video
         video = load_skeleton_sequence(video_path)  # (frames, keypoints, 3)
         
-        # Flatten to (frames, 1662) if needed
+        # Flatten to (frames, 1659) if needed
         if video.ndim == 3:
             num_frames = video.shape[0]
             video_flat = video.reshape(num_frames, -1)
@@ -99,9 +99,9 @@ def extract_transitions_from_video(
                 transition_normalized = normalize_skeleton(transition)
                 
                 yield {
-                    'start_pose': transition_normalized[0],      # (1662,)
-                    'end_pose': transition_normalized[-1],       # (1662,)
-                    'ground_truth': transition_normalized[1:-1], # (window_size-2, 1662)
+                    'start_pose': transition_normalized[0],      # (1659,)
+                    'end_pose': transition_normalized[-1],       # (1659,)
+                    'ground_truth': transition_normalized[1:-1], # (window_size-2, 1659)
                     'num_frames': window_size - 2,    # Actual transition length
                     'metadata': {
                         'source_video': str(video_path.name),

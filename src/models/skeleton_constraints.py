@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 
 
-# VSL Skeleton structure (1662 features)
+# VSL Skeleton structure (1659 features)
 # Pose: 0-131 (33 keypoints × 4: x,y,z,visibility)
 # Face: 132-1535 (468 keypoints × 3)
 # Left Hand: 1536-1598 (21 keypoints × 3)
@@ -42,10 +42,10 @@ HAND_CONNECTIONS = [
 
 def extract_pose_keypoints(skeleton_flat):
     """
-    Extract pose keypoints from flattened 1662 format.
+    Extract pose keypoints from flattened 1659 format.
     
     Args:
-        skeleton_flat: (batch, num_frames, 1662) or (batch, 1662)
+        skeleton_flat: (batch, num_frames, 1659) or (batch, 1659)
         
     Returns:
         pose_xyz: (batch, num_frames, 33, 3) or (batch, 33, 3)
@@ -65,10 +65,10 @@ def extract_pose_keypoints(skeleton_flat):
 
 def extract_hand_keypoints(skeleton_flat, hand='left'):
     """
-    Extract hand keypoints from flattened 1662 format.
+    Extract hand keypoints from flattened 1659 format.
     
     Args:
-        skeleton_flat: (batch, num_frames, 1662) or (batch, 1662)
+        skeleton_flat: (batch, num_frames, 1659) or (batch, 1659)
         hand: 'left' or 'right'
         
     Returns:
@@ -77,7 +77,7 @@ def extract_hand_keypoints(skeleton_flat, hand='left'):
     if hand == 'left':
         start, end = 1536, 1599
     else:  # right
-        start, end = 1599, 1662
+        start, end = 1599, 1659
     
     if skeleton_flat.ndim == 3:
         batch, frames, _ = skeleton_flat.shape
@@ -96,8 +96,8 @@ def bone_length_loss(skeleton_flat, reference_skeleton=None):
     Penalize changes in bone lengths (bones should maintain constant length).
     
     Args:
-        skeleton_flat: (batch, num_frames, 1662) predicted skeleton
-        reference_skeleton: (batch, num_frames, 1662) optional reference for bone lengths
+        skeleton_flat: (batch, num_frames, 1659) predicted skeleton
+        reference_skeleton: (batch, num_frames, 1659) optional reference for bone lengths
         
     Returns:
         loss: scalar tensor
@@ -148,7 +148,7 @@ def temporal_smoothness_loss(skeleton_flat):
     Penalize jerky motion (encourage smooth transitions).
     
     Args:
-        skeleton_flat: (batch, num_frames, 1662)
+        skeleton_flat: (batch, num_frames, 1659)
         
     Returns:
         loss: scalar tensor
@@ -170,7 +170,7 @@ def symmetry_loss(skeleton_flat):
     Encourage left-right symmetry in hands.
     
     Args:
-        skeleton_flat: (batch, num_frames, 1662)
+        skeleton_flat: (batch, num_frames, 1659)
         
     Returns:
         loss: scalar tensor
@@ -193,7 +193,7 @@ def coordinate_range_loss(skeleton_flat):
     Penalize coordinates outside valid range [0, 1].
     
     Args:
-        skeleton_flat: (batch, num_frames, 1662)
+        skeleton_flat: (batch, num_frames, 1659)
         
     Returns:
         loss: scalar tensor
@@ -212,7 +212,7 @@ def pose_validity_loss(skeleton_flat):
     Penalize invalid pose configurations (e.g., impossible joint angles).
     
     Args:
-        skeleton_flat: (batch, num_frames, 1662)
+        skeleton_flat: (batch, num_frames, 1659)
         
     Returns:
         loss: scalar tensor
@@ -256,7 +256,7 @@ def hand_coherence_loss(skeleton_flat):
     Penalize incoherent hand shapes (fingers should move together).
     
     Args:
-        skeleton_flat: (batch, num_frames, 1662)
+        skeleton_flat: (batch, num_frames, 1659)
         
     Returns:
         loss: scalar tensor
@@ -295,7 +295,7 @@ def motion_naturalness_loss(skeleton_flat):
     Penalize unnatural motion patterns (sudden jumps, jitter).
     
     Args:
-        skeleton_flat: (batch, num_frames, 1662)
+        skeleton_flat: (batch, num_frames, 1659)
         
     Returns:
         loss: scalar tensor
@@ -322,7 +322,7 @@ def perceptual_loss(skeleton_flat):
     Combined perceptual loss using MediaPipe pretrained model + custom rules.
     
     Args:
-        skeleton_flat: (batch, num_frames, 1662)
+        skeleton_flat: (batch, num_frames, 1659)
         
     Returns:
         loss: scalar tensor
@@ -374,7 +374,7 @@ def combined_constraint_loss(
     Combine all constraint losses including perceptual loss.
     
     Args:
-        skeleton_flat: (batch, num_frames, 1662) predicted skeleton
+        skeleton_flat: (batch, num_frames, 1659) predicted skeleton
         mse_loss: MSE loss (already computed)
         bone_weight: Weight for bone length constraint
         smooth_weight: Weight for smoothness constraint

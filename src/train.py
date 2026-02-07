@@ -32,8 +32,8 @@ def compute_metrics(predicted, target, mask=None):
     Compute training metrics.
     
     Args:
-        predicted: (batch, num_frames, 1662)
-        target: (batch, num_frames, 1662)
+        predicted: (batch, num_frames, 1659)
+        target: (batch, num_frames, 1659)
         mask: (batch, num_frames) optional mask for variable lengths
         
     Returns:
@@ -114,7 +114,7 @@ def train_epoch(
         mask_expanded = mask.unsqueeze(-1)  # (batch, num_frames, 1)
         
         # Calculate number of valid elements (not just frames)
-        num_valid_elements = mask_expanded.sum() * ground_truth.shape[-1]  # mask_sum * 1662
+        num_valid_elements = mask_expanded.sum() * ground_truth.shape[-1]  # mask_sum * 1659
         
         mse_loss = F.mse_loss(
             predicted_noise * mask_expanded,
@@ -306,7 +306,7 @@ def main():
     # Create model
     print("\nCreating model...")
     model = VSLDiffusionModel(
-        input_dim=1662,
+        input_dim=1659,
         hidden_dim=args.hidden_dim,
         num_layers=args.num_layers,
         num_heads=args.num_heads

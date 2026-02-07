@@ -93,8 +93,8 @@ def load_skeleton_sequence(file_path: Union[str, Path]) -> np.ndarray:
     
     # Note: We don't enforce specific keypoint count, as different datasets may have different numbers
     num_keypoints = skeleton.shape[1]
-    if num_keypoints not in [543, 554]:
-        print(f"  Warning: Found {num_keypoints} keypoints (expected 543 or 554). Continuing anyway...")
+    if num_keypoints not in [543, 553]:
+        print(f"  Warning: Found {num_keypoints} keypoints (expected 543 or 553). Continuing anyway...")
 
     
     return skeleton

@@ -1,12 +1,12 @@
 """
-Video rendering module for 554-keypoint skeleton sequences.
+Video rendering module for 553-keypoint skeleton sequences.
 
 This module handles the specific format from vsl-recognition project:
 - Pose: 33 landmarks × 4 (x,y,z,visibility) = 132 values → 44 keypoints
 - Face: 468 landmarks × 3 (x,y,z) = 1404 values → 468 keypoints  
 - Left Hand: 21 landmarks × 3 (x,y,z) = 63 values → 21 keypoints
 - Right Hand: 21 landmarks × 3 (x,y,z) = 63 values → 21 keypoints
-Total: 1662 values → 554 keypoints when reshaped to (frames, 554, 3)
+Total: 1659 values → 553 keypoints when reshaped to (frames, 553, 3)
 """
 
 import cv2
@@ -27,7 +27,7 @@ def render_skeleton_video(
     background_color: Tuple[int, int, int] = (255, 255, 255)
 ) -> None:
     """
-    Render skeleton sequence to video (auto-detects 554 or 543 keypoints).
+    Render skeleton sequence to video (auto-detects 553 or 543 keypoints).
     
     Args:
         skeleton_sequence: Skeleton data (num_frames, num_keypoints, 3)
@@ -38,10 +38,10 @@ def render_skeleton_video(
     """
     num_keypoints = skeleton_sequence.shape[1]
     
-    if num_keypoints == 554:
+    if num_keypoints == 553:
         render_skeleton_video_554(skeleton_sequence, output_path, fps, resolution, background_color)
     else:
-        # Fallback: use 554 rendering (works for any keypoint count)
+        # Fallback: use 553 rendering (works for any keypoint count)
         render_skeleton_video_554(skeleton_sequence, output_path, fps, resolution, background_color)
 
 
@@ -53,10 +53,10 @@ def render_skeleton_video_554(
     background_color: Tuple[int, int, int] = (255, 255, 255)
 ) -> None:
     """
-    Render 554-keypoint skeleton sequence to video.
+    Render 553-keypoint skeleton sequence to video.
     
     Args:
-        skeleton_sequence: Skeleton data (num_frames, 554, 3)
+        skeleton_sequence: Skeleton data (num_frames, 553, 3)
         output_path: Path to save output video
         fps: Frames per second
         resolution: Video resolution (width, height)
@@ -69,7 +69,7 @@ def render_skeleton_video_554(
     # MediaPipe 3D landmarks can have negative values, need to normalize to [0, 1]
     if skeleton_sequence.size > 0:
         # Extract only x, y coordinates (ignore z) for normalization
-        xy_coords = skeleton_sequence[:, :, :2]  # (frames, 554, 2)
+        xy_coords = skeleton_sequence[:, :, :2]  # (frames, 553, 2)
         
         min_val = xy_coords.min()
         max_val = xy_coords.max()
@@ -95,7 +95,7 @@ def render_skeleton_video_554(
         frame = np.full((resolution[1], resolution[0], 3), background_color, dtype=np.uint8)
         
         # Get skeleton for this frame (already normalized)
-        skeleton = skeleton_sequence[frame_idx]  # (554, 3)
+        skeleton = skeleton_sequence[frame_idx]  # (553, 3)
         
         # Draw skeleton on frame
         frame = draw_skeleton_554(frame, skeleton)
@@ -112,11 +112,11 @@ def draw_skeleton_554(
     skeleton: np.ndarray
 ) -> np.ndarray:
     """
-    Draw 554-keypoint skeleton on frame.
+    Draw 553-keypoint skeleton on frame.
     
     Args:
         frame: Image frame (H, W, 3)
-        skeleton: Skeleton keypoints (554, 3) - 3D landmarks (x, y, z)
+        skeleton: Skeleton keypoints (553, 3) - 3D landmarks (x, y, z)
                   We only use x, y for 2D rendering
         
     Returns:
@@ -126,13 +126,13 @@ def draw_skeleton_554(
     
     # Extract ONLY x, y coordinates (ignore z)
     # MediaPipe 3D landmarks have z in range [-1, 1] which causes distortion
-    skeleton_2d = skeleton[:, :2]  # (554, 2)
+    skeleton_2d = skeleton[:, :2]  # (553, 2)
     
     # Extract landmarks
-    pose_kpts = skeleton_2d[:44]
-    face_kpts = skeleton_2d[44:512]
-    left_hand_kpts = skeleton_2d[512:533]
-    right_hand_kpts = skeleton_2d[533:554]
+    pose_kpts = skeleton_2d[:33]
+    face_kpts = skeleton_2d[33:511]
+    left_hand_kpts = skeleton_2d[511:532]
+    right_hand_kpts = skeleton_2d[533:553]
     
     # Draw pose with connections
     pose_33 = skeleton_2d[:33]

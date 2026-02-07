@@ -167,7 +167,7 @@ if __name__ == "__main__":
     
     # Test add_noise
     batch_size = 4
-    sample = torch.randn(batch_size, 10, 1662)
+    sample = torch.randn(batch_size, 10, 1659)
     noise = torch.randn_like(sample)
     timesteps = torch.randint(0, 1000, (batch_size,))
     
