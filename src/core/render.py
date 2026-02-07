@@ -109,21 +109,26 @@ def draw_skeleton_554(
     
     Args:
         frame: Image frame (H, W, 3)
-        skeleton: Skeleton keypoints (554, 3) - should already be normalized [0,1]
+        skeleton: Skeleton keypoints (554, 3) - 3D landmarks (x, y, z)
+                  We only use x, y for 2D rendering
         
     Returns:
         Frame with skeleton drawn
     """
     h, w = frame.shape[:2]
     
+    # Extract ONLY x, y coordinates (ignore z)
+    # MediaPipe 3D landmarks have z in range [-1, 1] which causes distortion
+    skeleton_2d = skeleton[:, :2]  # (554, 2)
+    
     # Extract landmarks
-    pose_kpts = skeleton[:44]
-    face_kpts = skeleton[44:512]
-    left_hand_kpts = skeleton[512:533]
-    right_hand_kpts = skeleton[533:554]
+    pose_kpts = skeleton_2d[:44]
+    face_kpts = skeleton_2d[44:512]
+    left_hand_kpts = skeleton_2d[512:533]
+    right_hand_kpts = skeleton_2d[533:554]
     
     # Draw pose with connections
-    pose_33 = skeleton[:33]
+    pose_33 = skeleton_2d[:33]
     
     _draw_landmarks_with_connections(
         frame, pose_33,
