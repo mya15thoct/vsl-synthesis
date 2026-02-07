@@ -85,10 +85,25 @@ def extract_keypoints_from_video(video_path: Path, holistic) -> np.ndarray:
     
     cap.release()
     
-    # Convert to numpy array and reshape
-    # 543 keypoints * 3 coords = 1629 values per frame
-    keypoints_array = np.array(frames_keypoints, dtype=np.float32)  # (frames, 1629)
-    keypoints_array = keypoints_array.reshape(-1, 543, 3)  # (frames, 543, 3)
+    # Convert to numpy array
+    keypoints_array = np.array(frames_keypoints, dtype=np.float32)
+    
+    # Debug: Check array shape before reshape
+    expected_size = len(frames_keypoints) * 543 * 3
+    actual_size = keypoints_array.size
+    
+    if actual_size != expected_size:
+        raise ValueError(
+            f"Keypoint array size mismatch!\n"
+            f"  Frames: {len(frames_keypoints)}\n"
+            f"  Expected size: {expected_size} ({len(frames_keypoints)} frames * 543 keypoints * 3 coords)\n"
+            f"  Actual size: {actual_size}\n"
+            f"  First frame length: {len(frames_keypoints[0]) if frames_keypoints else 0}\n"
+            f"  Expected per frame: 1629 (543 * 3)"
+        )
+    
+    # Reshape to (frames, 543, 3)
+    keypoints_array = keypoints_array.reshape(-1, 543, 3)
     
     return keypoints_array
 
