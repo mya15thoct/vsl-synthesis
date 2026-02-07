@@ -163,6 +163,17 @@ def _draw_landmarks(
     """Draw landmarks as circles."""
     h, w = frame.shape[:2]
     
+    # Auto-normalize if data is not in [0, 1] range
+    if landmarks.size > 0:
+        min_val = landmarks.min()
+        max_val = landmarks.max()
+        if min_val < 0 or max_val > 1:
+            # Normalize to [0, 1]
+            if max_val > min_val:
+                landmarks = (landmarks - min_val) / (max_val - min_val)
+            else:
+                landmarks = np.full_like(landmarks, 0.5)
+    
     for landmark in landmarks:
         x, y = int(landmark[0] * w), int(landmark[1] * h)
         if 0 <= x < w and 0 <= y < h:
@@ -178,6 +189,17 @@ def _draw_landmarks_with_connections(
 ) -> None:
     """Draw landmarks with connections."""
     h, w = frame.shape[:2]
+    
+    # Auto-normalize if data is not in [0, 1] range
+    if landmarks.size > 0:
+        min_val = landmarks.min()
+        max_val = landmarks.max()
+        if min_val < 0 or max_val > 1:
+            # Normalize to [0, 1]
+            if max_val > min_val:
+                landmarks = (landmarks - min_val) / (max_val - min_val)
+            else:
+                landmarks = np.full_like(landmarks, 0.5)
     
     # Draw connections
     for connection in connections:
