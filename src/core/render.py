@@ -65,17 +65,24 @@ def render_skeleton_video_554(
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # Auto-normalize ENTIRE SEQUENCE if data is not in [0, 1] range
-    # Use GLOBAL min/max to preserve proportions across all frames
+    # Auto-normalize ENTIRE SEQUENCE using GLOBAL min/max
+    # MediaPipe 3D landmarks can have negative values, need to normalize to [0, 1]
     if skeleton_sequence.size > 0:
-        min_val = skeleton_sequence.min()
-        max_val = skeleton_sequence.max()
-        if min_val < 0 or max_val > 1:
-            print(f"  Normalizing skeleton data: [{min_val:.4f}, {max_val:.4f}] -> [0, 1]")
-            if max_val > min_val:
-                skeleton_sequence = (skeleton_sequence - min_val) / (max_val - min_val)
-            else:
-                skeleton_sequence = np.full_like(skeleton_sequence, 0.5)
+        # Extract only x, y coordinates (ignore z) for normalization
+        xy_coords = skeleton_sequence[:, :, :2]  # (frames, 554, 2)
+        
+        min_val = xy_coords.min()
+        max_val = xy_coords.max()
+        
+        print(f"  Coordinate range: [{min_val:.4f}, {max_val:.4f}]")
+        
+        # Always normalize to [0, 1] to handle negative coordinates
+        if max_val > min_val:
+            # Normalize x, y coordinates
+            skeleton_sequence[:, :, :2] = (xy_coords - min_val) / (max_val - min_val)
+            print(f"  Normalized to: [0.0, 1.0]")
+        else:
+            skeleton_sequence[:, :, :2] = 0.5
     
     # Video writer
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
