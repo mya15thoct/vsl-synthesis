@@ -65,6 +65,18 @@ def render_skeleton_video_554(
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
+    # Auto-normalize ENTIRE SEQUENCE if data is not in [0, 1] range
+    # Use GLOBAL min/max to preserve proportions across all frames
+    if skeleton_sequence.size > 0:
+        min_val = skeleton_sequence.min()
+        max_val = skeleton_sequence.max()
+        if min_val < 0 or max_val > 1:
+            print(f"  Normalizing skeleton data: [{min_val:.4f}, {max_val:.4f}] -> [0, 1]")
+            if max_val > min_val:
+                skeleton_sequence = (skeleton_sequence - min_val) / (max_val - min_val)
+            else:
+                skeleton_sequence = np.full_like(skeleton_sequence, 0.5)
+    
     # Video writer
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(str(output_path), fourcc, fps, resolution)
@@ -75,7 +87,7 @@ def render_skeleton_video_554(
         # Create blank frame
         frame = np.full((resolution[1], resolution[0], 3), background_color, dtype=np.uint8)
         
-        # Get skeleton for this frame
+        # Get skeleton for this frame (already normalized)
         skeleton = skeleton_sequence[frame_idx]  # (554, 3)
         
         # Draw skeleton on frame
@@ -95,47 +107,22 @@ def draw_skeleton_554(
     """
     Draw 554-keypoint skeleton on frame.
     
-    The 554 keypoints are structured as:
-    - 0-43: Pose (33 landmarks with 4 values each, reshaped to 44 keypoints)
-    - 44-511: Face (468 landmarks)
-    - 512-532: Left Hand (21 landmarks)
-    - 533-553: Right Hand (21 landmarks)
-    
     Args:
         frame: Image frame (H, W, 3)
-        skeleton: Skeleton keypoints (554, 3)
+        skeleton: Skeleton keypoints (554, 3) - should already be normalized [0,1]
         
     Returns:
         Frame with skeleton drawn
     """
     h, w = frame.shape[:2]
     
-    # Auto-normalize ENTIRE skeleton if data is not in [0, 1] range
-    # This preserves relative positions between keypoints
-    if skeleton.size > 0:
-        min_val = skeleton.min()
-        max_val = skeleton.max()
-        if min_val < 0 or max_val > 1:
-            # Normalize to [0, 1]
-            if max_val > min_val:
-                skeleton = (skeleton - min_val) / (max_val - min_val)
-            else:
-                skeleton = np.full_like(skeleton, 0.5)
-    
-    # Extract landmarks (approximate indices based on 1662/3 = 554 structure)
-    # Pose: 132/3 = 44 keypoints (indices 0-43)
-    # Face: 1404/3 = 468 keypoints (indices 44-511)
-    # Left Hand: 63/3 = 21 keypoints (indices 512-532)
-    # Right Hand: 63/3 = 21 keypoints (indices 533-553)
-    
+    # Extract landmarks
     pose_kpts = skeleton[:44]
     face_kpts = skeleton[44:512]
     left_hand_kpts = skeleton[512:533]
     right_hand_kpts = skeleton[533:554]
     
-    # Draw pose with connections (use first 33 keypoints, skip visibility keypoints)
-    pose_33 = pose_kpts[::4//3][:33]  # Approximate: take every ~1.33th keypoint to get 33
-    # Simpler: just use first 33 keypoints
+    # Draw pose with connections
     pose_33 = skeleton[:33]
     
     _draw_landmarks_with_connections(
@@ -160,7 +147,7 @@ def draw_skeleton_554(
         thickness=2
     )
     
-    # Draw face landmarks (no connections, just dots for clarity)
+    # Draw face landmarks
     _draw_landmarks(frame, face_kpts, (128, 128, 128), radius=1)
     
     return frame
