@@ -132,7 +132,7 @@ def draw_skeleton_554(
     pose_kpts = skeleton_2d[:33]
     face_kpts = skeleton_2d[33:511]
     left_hand_kpts = skeleton_2d[511:532]
-    right_hand_kpts = skeleton_2d[533:553]
+    right_hand_kpts = skeleton_2d[532:553]
     
     # Draw pose with connections
     pose_33 = skeleton_2d[:33]
