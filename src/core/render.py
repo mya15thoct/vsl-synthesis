@@ -110,6 +110,18 @@ def draw_skeleton_554(
     """
     h, w = frame.shape[:2]
     
+    # Auto-normalize ENTIRE skeleton if data is not in [0, 1] range
+    # This preserves relative positions between keypoints
+    if skeleton.size > 0:
+        min_val = skeleton.min()
+        max_val = skeleton.max()
+        if min_val < 0 or max_val > 1:
+            # Normalize to [0, 1]
+            if max_val > min_val:
+                skeleton = (skeleton - min_val) / (max_val - min_val)
+            else:
+                skeleton = np.full_like(skeleton, 0.5)
+    
     # Extract landmarks (approximate indices based on 1662/3 = 554 structure)
     # Pose: 132/3 = 44 keypoints (indices 0-43)
     # Face: 1404/3 = 468 keypoints (indices 44-511)
@@ -163,17 +175,6 @@ def _draw_landmarks(
     """Draw landmarks as circles."""
     h, w = frame.shape[:2]
     
-    # Auto-normalize if data is not in [0, 1] range
-    if landmarks.size > 0:
-        min_val = landmarks.min()
-        max_val = landmarks.max()
-        if min_val < 0 or max_val > 1:
-            # Normalize to [0, 1]
-            if max_val > min_val:
-                landmarks = (landmarks - min_val) / (max_val - min_val)
-            else:
-                landmarks = np.full_like(landmarks, 0.5)
-    
     for landmark in landmarks:
         x, y = int(landmark[0] * w), int(landmark[1] * h)
         if 0 <= x < w and 0 <= y < h:
@@ -189,17 +190,6 @@ def _draw_landmarks_with_connections(
 ) -> None:
     """Draw landmarks with connections."""
     h, w = frame.shape[:2]
-    
-    # Auto-normalize if data is not in [0, 1] range
-    if landmarks.size > 0:
-        min_val = landmarks.min()
-        max_val = landmarks.max()
-        if min_val < 0 or max_val > 1:
-            # Normalize to [0, 1]
-            if max_val > min_val:
-                landmarks = (landmarks - min_val) / (max_val - min_val)
-            else:
-                landmarks = np.full_like(landmarks, 0.5)
     
     # Draw connections
     for connection in connections:
