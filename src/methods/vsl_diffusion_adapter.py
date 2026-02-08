@@ -142,25 +142,32 @@ class VSLDiffusionGenerator:
         print(f"  Min: {transition.min():.4f}, Max: {transition.max():.4f}")
         print(f"  Mean: {transition.mean():.4f}, Std: {transition.std():.4f}")
         
-        # Normalize to [0, 1] using min-max scaling
-        # This preserves the relative structure while bringing values into valid range
-        min_val = transition.min()
-        max_val = transition.max()
+        # Denormalize to MediaPipe coordinate range
+        # Training data range is approximately [-1.5, 1.5]
+        # Clip extreme values and scale to match this range
         
-        if max_val > min_val:
-            transition_normalized = (transition - min_val) / (max_val - min_val)
+        mean = transition.mean()
+        std = transition.std()
+        transition_clipped = np.clip(transition, mean - 3*std, mean + 3*std)
+        
+        # Scale to MediaPipe range [-1.5, 1.5]
+        current_range = transition_clipped.max() - transition_clipped.min()
+        target_range = 3.0
+        
+        if current_range > 0:
+            scale = target_range / current_range
+            transition_scaled = transition_clipped * scale
         else:
-            # All values are the same, just set to 0.5
-            transition_normalized = np.full_like(transition, 0.5)
+            transition_scaled = transition_clipped
         
-        print(f"\n[DEBUG] After normalization:")
-        print(f"  Min: {transition_normalized.min():.4f}, Max: {transition_normalized.max():.4f}")
-        print(f"  Mean: {transition_normalized.mean():.4f}, Std: {transition_normalized.std():.4f}")
+        print(f"\n[DEBUG] After denormalization:")
+        print(f"  Min: {transition_scaled.min():.4f}, Max: {transition_scaled.max():.4f}")
+        print(f"  Mean: {transition_scaled.mean():.4f}, Std: {transition_scaled.std():.4f}")
         
         # Reshape to (num_frames, 553, 3)
-        transition_normalized = transition_normalized.reshape(num_frames, 553, 3)
+        transition_scaled = transition_scaled.reshape(num_frames, 553, 3)
         
-        return transition_normalized
+        return transition_scaled
 
 
 # Convenience function for direct use
