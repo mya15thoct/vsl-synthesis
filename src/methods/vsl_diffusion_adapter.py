@@ -135,8 +135,14 @@ class VSLDiffusionGenerator:
         # Create condition (concatenate start + end)
         condition = torch.cat([start_tensor, end_tensor], dim=-1).unsqueeze(0)  # (1, 3318)
         
-        # Start with random noise
-        x_t = torch.randn(1, num_frames, 1659, device=self.device)
+        # CRITICAL: Start with noise in [0, 1] range to match training data
+        # Training data is normalized to [0, 1], so initial noise should be too
+        # Use uniform noise [0, 1] or clipped Gaussian
+        x_t = torch.rand(1, num_frames, 1659, device=self.device)  # Uniform [0, 1]
+        
+        # Alternative: Gaussian clipped to [0, 1]
+        # x_t = torch.randn(1, num_frames, 1659, device=self.device) * 0.3 + 0.5
+        # x_t = torch.clamp(x_t, 0.0, 1.0)
         
         # Create target_length tensor for length conditioning
         target_length = torch.tensor([num_frames], dtype=torch.long, device=self.device)
