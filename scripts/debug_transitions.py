@@ -9,8 +9,8 @@ import sys
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
-from core.concatenation import concatenate_sequences, get_transition_boundaries
-from methods.interpolation import cubic_spline_interpolation
+from src.core.concatenation import concatenate_sequences, get_transition_boundaries
+from src.methods.interpolation import cubic_spline_interpolation
 
 # Test files
 word_files = [
