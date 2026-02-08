@@ -77,7 +77,7 @@ def extract_hand_keypoints(skeleton_flat, hand='left'):
     if hand == 'left':
         start, end = 1533, 1596  # 21 keypoints × 3 = 63 values
     else:  # right
-        start, end = 1599, 1659
+        start, end = 1596, 1659  # 21 keypoints × 3 = 63 values
     
     if skeleton_flat.ndim == 3:
         batch, frames, _ = skeleton_flat.shape
