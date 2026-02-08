@@ -28,9 +28,9 @@ print("✓ Model loaded")
 # Load training data sample
 print("\n2. Loading training data...")
 data = np.load('/mnt/ngan/vsl_data/diffusion/train/transition_000000.npz')
-gt = torch.from_numpy(data['ground_truth'][:]).float().cuda()  # (5, 1659)
-start = torch.from_numpy(data['start_pose'][:]).float().cuda()  # (1659,)
-end = torch.from_numpy(data['end_pose'][:]).float().cuda()  # (1659,)
+gt = torch.from_numpy(np.array(data['ground_truth'])).float().cuda()  # (5, 1659)
+start = torch.from_numpy(np.array(data['start_pose'])).float().cuda()  # (1659,)
+end = torch.from_numpy(np.array(data['end_pose'])).float().cuda()  # (1659,)
 
 print(f"  Ground truth: {gt.shape}, range [{gt.min():.3f}, {gt.max():.3f}]")
 print(f"  Start pose: {start.shape}, range [{start.min():.3f}, {start.max():.3f}]")
