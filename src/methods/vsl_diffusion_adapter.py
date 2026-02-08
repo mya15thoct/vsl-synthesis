@@ -110,12 +110,30 @@ class VSLDiffusionGenerator:
         if len(start_pose_flat) != 1659:
             raise ValueError(f"Expected 1659 features, got {len(start_pose_flat)}")
         
-        # Convert to tensors (use torch.tensor to avoid numpy 1.23.5 issue)
-        start_tensor = torch.tensor(start_pose_flat, dtype=torch.float32, device=self.device)
-        end_tensor = torch.tensor(end_pose_flat, dtype=torch.float32, device=self.device)
+        # CRITICAL: Normalize inputs to [0, 1] to match training data
+        # Training data was normalized using render.py's normalization
+        # Original MediaPipe range is approximately [-1.5, 1.5]
+        # We use the same normalization as in render.py
+        def normalize_pose(pose):
+            # Clip to reasonable range first
+            pose_clipped = np.clip(pose, -2.0, 2.0)
+            # Normalize to [0, 1]
+            pose_norm = (pose_clipped + 2.0) / 4.0  # [-2, 2] -> [0, 1]
+            return pose_norm
+        
+        start_pose_norm = normalize_pose(start_pose_flat)
+        end_pose_norm = normalize_pose(end_pose_flat)
+        
+        print(f"\n[DEBUG] Input normalization:")
+        print(f"  Start pose: [{start_pose_flat.min():.4f}, {start_pose_flat.max():.4f}] -> [{start_pose_norm.min():.4f}, {start_pose_norm.max():.4f}]")
+        print(f"  End pose: [{end_pose_flat.min():.4f}, {end_pose_flat.max():.4f}] -> [{end_pose_norm.min():.4f}, {end_pose_norm.max():.4f}]")
+        
+        # Convert to tensors
+        start_tensor = torch.tensor(start_pose_norm, dtype=torch.float32, device=self.device)
+        end_tensor = torch.tensor(end_pose_norm, dtype=torch.float32, device=self.device)
         
         # Create condition (concatenate start + end)
-        condition = torch.cat([start_tensor, end_tensor], dim=-1).unsqueeze(0)  # (1, 3324)
+        condition = torch.cat([start_tensor, end_tensor], dim=-1).unsqueeze(0)  # (1, 3318)
         
         # Start with random noise
         x_t = torch.randn(1, num_frames, 1659, device=self.device)
@@ -142,32 +160,22 @@ class VSLDiffusionGenerator:
         print(f"  Min: {transition.min():.4f}, Max: {transition.max():.4f}")
         print(f"  Mean: {transition.mean():.4f}, Std: {transition.std():.4f}")
         
-        # Denormalize to MediaPipe coordinate range
-        # Training data range is approximately [-1.5, 1.5]
-        # Clip extreme values and scale to match this range
+        # Denormalize from [0, 1] back to MediaPipe range [-2, 2]
+        # Model was trained on data normalized to [0, 1]
+        # We need to reverse the normalization: x_norm = (x + 2) / 4
+        # So: x = x_norm * 4 - 2
         
-        mean = transition.mean()
-        std = transition.std()
-        transition_clipped = np.clip(transition, mean - 3*std, mean + 3*std)
+        transition_denorm = transition * 4.0 - 2.0
         
-        # Scale to MediaPipe range [-1.5, 1.5]
-        current_range = transition_clipped.max() - transition_clipped.min()
-        target_range = 3.0
-        
-        if current_range > 0:
-            scale = target_range / current_range
-            transition_scaled = transition_clipped * scale
-        else:
-            transition_scaled = transition_clipped
-        
-        print(f"\n[DEBUG] After denormalization:")
-        print(f"  Min: {transition_scaled.min():.4f}, Max: {transition_scaled.max():.4f}")
-        print(f"  Mean: {transition_scaled.mean():.4f}, Std: {transition_scaled.std():.4f}")
+        print(f"\n[DEBUG] Output denormalization:")
+        print(f"  Model output [0,1]: [{transition.min():.4f}, {transition.max():.4f}]")
+        print(f"  Denormalized [-2,2]: [{transition_denorm.min():.4f}, {transition_denorm.max():.4f}]")
+        print(f"  Mean: {transition_denorm.mean():.4f}, Std: {transition_denorm.std():.4f}")
         
         # Reshape to (num_frames, 553, 3)
-        transition_scaled = transition_scaled.reshape(num_frames, 553, 3)
+        transition_denorm = transition_denorm.reshape(num_frames, 553, 3)
         
-        return transition_scaled
+        return transition_denorm
 
 
 # Convenience function for direct use
