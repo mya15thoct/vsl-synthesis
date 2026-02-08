@@ -75,7 +75,7 @@ def extract_hand_keypoints(skeleton_flat, hand='left'):
         hand_xyz: (batch, num_frames, 21, 3) or (batch, 21, 3)
     """
     if hand == 'left':
-        start, end = 1536, 1599
+        start, end = 1533, 1596  # 21 keypoints × 3 = 63 values
     else:  # right
         start, end = 1599, 1659
     
