@@ -154,6 +154,13 @@ class VSLDiffusionGenerator:
                 t_tensor = torch.tensor([t], device=self.device).long()
                 noise_pred = self.model(x_t, t_tensor, condition, target_length)
                 
+                # CRITICAL: Clip noise predictions to prevent unbounded values
+                # Model outputs unbounded noise (e.g., [-2.5, 2.9]) which causes denoising to fail
+                # Clip to reasonable range for noise in [0,1] data space
+                # Noise should be roughly N(0, 1) scaled by sqrt(1-alpha)
+                # For [0,1] data, reasonable noise is roughly [-2, 2]
+                noise_pred = torch.clamp(noise_pred, -2.0, 2.0)
+                
                 # Denoise step
                 x_t = self.scheduler.step(noise_pred, t, x_t).prev_sample
         
