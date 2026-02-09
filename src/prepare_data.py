@@ -15,7 +15,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 # Import from same package
-from core.concatenation import load_skeleton_sequence
+from src.core.concatenation import load_skeleton_sequence
 
 
 def normalize_skeleton(skeleton):
