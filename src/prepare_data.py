@@ -20,7 +20,11 @@ from core.concatenation import load_skeleton_sequence
 
 def normalize_skeleton(skeleton):
     """
-    Normalize skeleton coordinates to [0, 1] range.
+    Normalize skeleton coordinates to [0, 1] range using FIXED global range.
+    
+    This ensures consistent normalization across all videos, matching inference.
+    Original MediaPipe coordinates are approximately in [-1.5, 1.5] range.
+    We use [-2, 2] as a safe global range to cover all possible values.
     
     Args:
         skeleton: (frames, 1659) or (frames, 553, 3) skeleton data
@@ -36,15 +40,16 @@ def normalize_skeleton(skeleton):
     else:
         skeleton_flat = skeleton
     
-    # Normalize to [0, 1] using min-max scaling
-    min_val = skeleton_flat.min()
-    max_val = skeleton_flat.max()
+    # CRITICAL: Use FIXED global range for consistent normalization
+    # This matches the inference normalization in vsl_diffusion_adapter.py
+    GLOBAL_MIN = -2.0
+    GLOBAL_MAX = 2.0
     
-    if max_val > min_val:
-        normalized = (skeleton_flat - min_val) / (max_val - min_val)
-    else:
-        # All values are the same, set to 0.5
-        normalized = np.full_like(skeleton_flat, 0.5)
+    # Clip to global range first (handle outliers)
+    skeleton_clipped = np.clip(skeleton_flat, GLOBAL_MIN, GLOBAL_MAX)
+    
+    # Normalize to [0, 1]
+    normalized = (skeleton_clipped - GLOBAL_MIN) / (GLOBAL_MAX - GLOBAL_MIN)
     
     # Reshape back to original shape
     return normalized.reshape(original_shape)
