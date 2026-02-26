@@ -144,7 +144,10 @@ def extract_transitions_from_video(
                 continue
                 
             # Extract transitions with sliding window
-            for start_idx in range(0, num_frames - window_size + 1, stride):
+            # Skip windows whose end falls in the last 10 frames (~0.33s at 30fps)
+            # to avoid including rest pose frames in training data
+            safe_end = max(window_size, num_frames - 10)
+            for start_idx in range(0, safe_end - window_size + 1, stride):
                 end_idx = start_idx + window_size
                 transition = video_flat[start_idx:end_idx]
                 
