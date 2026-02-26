@@ -55,6 +55,50 @@ def normalize_skeleton(skeleton):
     return normalized.reshape(original_shape)
 
 
+def trim_rest_pose(video_flat, motion_threshold=0.008, min_rest_length=3):
+    """
+    Trim rest pose frames at the end of a sign language sequence.
+    
+    Rest pose = hands lowered and body still (motion below threshold).
+    
+    Args:
+        video_flat: (frames, 1659) flattened skeleton sequence
+        motion_threshold: Wrist velocity below this = still (default: 0.008)
+        min_rest_length: Min consecutive still frames to trigger trim
+        
+    Returns:
+        Trimmed (frames, 1659) sequence
+    """
+    num_frames = len(video_flat)
+    if num_frames < min_rest_length + 4:
+        return video_flat  # Too short to trim
+    
+    # Extract wrist positions (left=15, right=16 in MediaPipe pose)
+    # Pose is first 132 features: 33 keypoints x 4 (x,y,z,vis)
+    pose = video_flat[:, :132].reshape(num_frames, 33, 4)
+    left_wrist = pose[:, 15, :3]   # (frames, 3)
+    right_wrist = pose[:, 16, :3]  # (frames, 3)
+    
+    # Compute per-frame motion (wrist velocity)
+    left_vel = np.diff(left_wrist, axis=0)
+    right_vel = np.diff(right_wrist, axis=0)
+    motion = (np.sqrt((left_vel**2).sum(-1)) + np.sqrt((right_vel**2).sum(-1))) / 2
+    
+    # Scan from end to find where rest begins
+    trim_end = num_frames
+    for i in range(len(motion) - 1, min_rest_length - 2, -1):
+        window = motion[max(0, i - min_rest_length + 1): i + 1]
+        if window.max() < motion_threshold:
+            trim_end = i  # Still, extend the rest region backward
+        else:
+            break  # Found motion, stop
+    
+    # Keep at least 5 frames
+    trim_end = max(trim_end, 5)
+    
+    return video_flat[:trim_end]
+
+
 def extract_transitions_from_video(
     video_path: Path,
     window_sizes: list = [5, 10, 15, 20],
@@ -84,6 +128,10 @@ def extract_transitions_from_video(
         else:
             video_flat = video
             num_frames = video_flat.shape[0]
+        
+        # Trim rest pose at the end (hands lowered, body still)
+        video_flat = trim_rest_pose(video_flat)
+        num_frames = len(video_flat)
         
         # Skip videos that are too short
         if num_frames < min_frames:
