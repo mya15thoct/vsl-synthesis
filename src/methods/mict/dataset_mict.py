@@ -61,9 +61,9 @@ class MicTDataset(Dataset):
             T_total    = max_masked
 
         return {
-            'full_sequence':   torch.from_numpy(full_seq),    # (T_words, 1659)
-            'masked_sequence': torch.from_numpy(masked_seq),  # (T_total, 1659)
-            'frame_mask':      torch.from_numpy(frame_mask),  # (T_total,)
+            'full_sequence':   torch.tensor(full_seq,   dtype=torch.float32),
+            'masked_sequence': torch.tensor(masked_seq, dtype=torch.float32),
+            'frame_mask':      torch.tensor(frame_mask, dtype=torch.float32),
             'full_length':     T_words,
             'masked_length':   T_total,
         }

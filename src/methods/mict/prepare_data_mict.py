@@ -121,15 +121,31 @@ def prepare_mict_dataset(
     word_folders = sorted([d for d in data_dir.iterdir() if d.is_dir()])
     print(f"Found {len(word_folders)} words")
 
-    # Map: word_name → list of .npy files
+    # Map: word_name → list of .npy files (chỉ lấy file có đúng feature dim)
+    EXPECTED_DIM = 1659
     word_files = {}
+    skipped_words = []
     for folder in word_folders:
         npys = sorted(folder.glob("*.npy"))
-        if npys:
-            word_files[folder.name] = npys
+        if not npys:
+            continue
+        # Kiểm tra dim bằng cách đọc file đầu tiên
+        try:
+            sample = np.load(str(npys[0])).astype(np.float32)
+            if sample.ndim == 3:
+                sample = sample.reshape(sample.shape[0], -1)
+            if sample.shape[1] != EXPECTED_DIM:
+                skipped_words.append(f"{folder.name} (dim={sample.shape[1]})")
+                continue
+        except Exception:
+            skipped_words.append(f"{folder.name} (unreadable)")
+            continue
+        word_files[folder.name] = npys
 
     word_names = list(word_files.keys())
     print(f"Words with data: {len(word_names)}")
+    if skipped_words:
+        print(f"Skipped {len(skipped_words)} words with wrong dim: {skipped_words}")
 
     # Tạo output dirs
     train_dir = output_dir / "train"

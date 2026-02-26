@@ -65,21 +65,30 @@ def render_skeleton_video_554(
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # Auto-normalize ENTIRE SEQUENCE using GLOBAL min/max
-    # MediaPipe 3D landmarks can have negative values, need to normalize to [0, 1]
+    # Auto-normalize using only NON-ZERO frames (actual word frames).
+    # Transition frames from an undertrained model may have extreme values
+    # that collapse the entire render to a single dot if included in normalization.
     if skeleton_sequence.size > 0:
-        # Extract only x, y coordinates (ignore z) for normalization
         xy_coords = skeleton_sequence[:, :, :2]  # (frames, 553, 2)
-        
-        min_val = xy_coords.min()
-        max_val = xy_coords.max()
-        
-        print(f"  Coordinate range: [{min_val:.4f}, {max_val:.4f}]")
-        
-        # Always normalize to [0, 1] to handle negative coordinates
+
+        # Identify non-zero frames (frames with actual skeleton data)
+        frame_sums = np.abs(skeleton_sequence).sum(axis=(1, 2))  # (frames,)
+        nonzero_mask = frame_sums > 1e-6
+
+        if nonzero_mask.any():
+            valid_xy = xy_coords[nonzero_mask]  # only real frames
+            min_val = valid_xy.min()
+            max_val = valid_xy.max()
+        else:
+            min_val = xy_coords.min()
+            max_val = xy_coords.max()
+
+        print(f"  Coordinate range (non-zero frames): [{min_val:.4f}, {max_val:.4f}]")
+
         if max_val > min_val:
-            # Normalize x, y coordinates
             skeleton_sequence[:, :, :2] = (xy_coords - min_val) / (max_val - min_val)
+            # Clamp to [0, 1] to handle extreme transition values
+            skeleton_sequence[:, :, :2] = np.clip(skeleton_sequence[:, :, :2], 0.0, 1.0)
             print(f"  Normalized to: [0.0, 1.0]")
         else:
             skeleton_sequence[:, :, :2] = 0.5
