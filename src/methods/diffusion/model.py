@@ -21,13 +21,6 @@ class SinusoidalPositionEmbedding(nn.Module):
         self.dim = dim
     
     def forward(self, timesteps: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            timesteps: (batch_size,) tensor of timestep indices
-            
-        Returns:
-            (batch_size, dim) embeddings
-        """
         device = timesteps.device
         half_dim = self.dim // 2
         embeddings = math.log(10000) / (half_dim - 1)
@@ -49,7 +42,6 @@ class TransformerBlock(nn.Module):
     ):
         super().__init__()
         
-        # Multi-head self-attention
         self.attention = nn.MultiheadAttention(
             embed_dim=hidden_dim,
             num_heads=num_heads,
@@ -57,7 +49,6 @@ class TransformerBlock(nn.Module):
             batch_first=True
         )
         
-        # Feed-forward network
         self.ff = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim * ff_mult),
             nn.GELU(),
@@ -66,26 +57,14 @@ class TransformerBlock(nn.Module):
             nn.Dropout(dropout)
         )
         
-        # Layer normalization
         self.norm1 = nn.LayerNorm(hidden_dim)
         self.norm2 = nn.LayerNorm(hidden_dim)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: (batch, seq_len, hidden_dim)
-            
-        Returns:
-            (batch, seq_len, hidden_dim)
-        """
-        # Self-attention with residual
         attn_out, _ = self.attention(x, x, x)
         x = self.norm1(x + attn_out)
-        
-        # Feed-forward with residual
         ff_out = self.ff(x)
         x = self.norm2(x + ff_out)
-        
         return x
 
 
@@ -97,15 +76,7 @@ class VSLDiffusionModel(nn.Module):
         - Condition encoder: Encodes start/end poses
         - Timestep embedding: Sinusoidal embedding for diffusion timestep
         - Transformer: Denoising network
-        - Output projection: Maps back to VSL format
-    
-    Input:
-        - noisy_data: (batch, num_frames, 1659) noisy skeleton sequence
-        - timesteps: (batch,) diffusion timestep indices
-        - condition: (batch, 1659*2) concatenated start/end poses
-        
-    Output:
-        - predicted_noise: (batch, num_frames, 1659) predicted noise
+        - Output projection: Maps back to VSL format with Tanh activation
     """
     
     def __init__(
@@ -126,9 +97,14 @@ class VSLDiffusionModel(nn.Module):
         self.dropout = dropout
         self.max_frames = max_frames
         
-        # Condition encoder (start + end poses)
+        # Condition encoder (start + end poses) - improved with 3 layers
         self.condition_encoder = nn.Sequential(
             nn.Linear(input_dim * 2, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.SiLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.SiLU(),
             nn.Linear(hidden_dim, hidden_dim // 4)
         )
@@ -136,9 +112,9 @@ class VSLDiffusionModel(nn.Module):
         # Timestep embedding
         self.time_embed = SinusoidalPositionEmbedding(hidden_dim // 4)
         
-        # Length embedding (for target sequence length)
+        # Length embedding
         self.length_embed = nn.Embedding(
-            num_embeddings=max_frames + 1,  # Support lengths 0 to max_frames
+            num_embeddings=max_frames + 1,
             embedding_dim=hidden_dim // 4
         )
         
@@ -156,11 +132,13 @@ class VSLDiffusionModel(nn.Module):
             for _ in range(num_layers)
         ])
         
-        # Output projection
+        # Output projection with Tanh to bound predictions to [-1, 1]
         self.output_proj = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             nn.SiLU(),
-            nn.Linear(hidden_dim, input_dim)
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, input_dim),
+            nn.Tanh()  # Bound output to [-1, 1] - prevents unbounded predictions
         )
     
     def forward(
@@ -170,53 +148,27 @@ class VSLDiffusionModel(nn.Module):
         condition: torch.Tensor,
         target_length: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
-        """
-        Forward pass for denoising.
-        
-        Args:
-            noisy_data: (batch, num_frames, 1659) noisy skeleton sequence
-            timesteps: (batch,) timestep indices [0, 999]
-            condition: (batch, 1659*2) concatenated start/end poses
-            target_length: (batch,) target sequence lengths (optional, defaults to actual length)
-            
-        Returns:
-            predicted_noise: (batch, num_frames, 1659)
-        """
         batch_size, num_frames, _ = noisy_data.shape
         
-        # Encode condition (start + end poses)
-        cond_emb = self.condition_encoder(condition)  # (batch, hidden_dim//4)
+        cond_emb = self.condition_encoder(condition)
+        time_emb = self.time_embed(timesteps)
         
-        # Encode timestep
-        time_emb = self.time_embed(timesteps)  # (batch, hidden_dim//4)
-        
-        # Encode target length (if not provided, use actual sequence length)
         if target_length is None:
             target_length = torch.full((batch_size,), num_frames, dtype=torch.long, device=noisy_data.device)
-        length_emb = self.length_embed(target_length)  # (batch, hidden_dim//4)
+        length_emb = self.length_embed(target_length)
         
-        # Combine condition, time, and length embeddings
-        # Reserve hidden_dim//4 for future extensions
         padding = torch.zeros(batch_size, self.hidden_dim // 4, device=noisy_data.device)
-        context = torch.cat([cond_emb, time_emb, length_emb, padding], dim=-1)  # (batch, hidden_dim)
-        context = context.unsqueeze(1)  # (batch, 1, hidden_dim)
+        context = torch.cat([cond_emb, time_emb, length_emb, padding], dim=-1)
+        context = context.unsqueeze(1)
         
-        # Project input
-        x = self.input_proj(noisy_data)  # (batch, num_frames, hidden_dim)
-        
-        # Add positional encoding
+        x = self.input_proj(noisy_data)
         x = x + self.pos_encoding[:, :num_frames, :]
-        
-        # Add context to each frame
         x = x + context
         
-        # Apply transformer blocks
         for block in self.transformer_blocks:
             x = block(x)
         
-        # Project to output
-        predicted_noise = self.output_proj(x)  # (batch, num_frames, 1659)
-        
+        predicted_noise = self.output_proj(x)
         return predicted_noise
     
     def save(self, path: str):
@@ -239,7 +191,6 @@ class VSLDiffusionModel(nn.Module):
         checkpoint = torch.load(path, map_location=device)
         config = checkpoint.get('config', {})
         
-        # Handle old checkpoints without full config
         model = cls(
             input_dim=config.get('input_dim', 1659),
             hidden_dim=config.get('hidden_dim', 512),
@@ -250,37 +201,4 @@ class VSLDiffusionModel(nn.Module):
         )
         model.load_state_dict(checkpoint['model_state_dict'])
         model.to(device)
-        
         return model
-
-
-if __name__ == "__main__":
-    # Test model
-    print("Testing VSL Diffusion Model...")
-    
-    batch_size = 4
-    num_frames = 18
-    input_dim = 1659
-    
-    # Create dummy inputs
-    noisy_data = torch.randn(batch_size, num_frames, input_dim)
-    timesteps = torch.randint(0, 1000, (batch_size,))
-    start_pose = torch.randn(batch_size, input_dim)
-    end_pose = torch.randn(batch_size, input_dim)
-    condition = torch.cat([start_pose, end_pose], dim=-1)
-    
-    # Create model
-    model = VSLDiffusionModel(
-        input_dim=input_dim,
-        hidden_dim=512,
-        num_layers=8,
-        num_heads=8
-    )
-    
-    # Forward pass
-    predicted_noise = model(noisy_data, timesteps, condition)
-    
-    print(f"Model test passed!")
-    print(f"  Input shape: {noisy_data.shape}")
-    print(f"  Output shape: {predicted_noise.shape}")
-    print(f"  Parameters: {sum(p.numel() for p in model.parameters()):,}")

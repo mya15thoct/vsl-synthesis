@@ -95,7 +95,7 @@ def synthesize_sentence(
         # Phase 3: Use diffusion model
         # Try VSL-native diffusion first, fallback to MDM if not available
         try:
-            from .methods.vsl_diffusion_adapter import VSLDiffusionGenerator
+            from .methods.diffusion import VSLDiffusionGenerator
             vsl_diffusion = VSLDiffusionGenerator(model_path=model_path)
             vsl_diffusion.load_model()
             print("   Using VSL-native diffusion model")
