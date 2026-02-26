@@ -42,19 +42,24 @@ def load_npy(path):
 
 def build_sentence_sample(word_paths, transition_frames=10):
     """
-    Ghép N từ thành 1 sequence câu với transition frames (zero) ở giữa.
+    Ghép N từ thành 1 sequence câu.
+
+    full_sequence:   concat trực tiếp các word frames (KHÔNG có zeros)
+                     → đây là ground truth model cần học reconstruct
+    masked_sequence: word frames + zero transition frames ở giữa
+                     → đây là observation condition (input) lúc inference
 
     Args:
         word_paths: list of Path — .npy files cho từng từ trong câu
-        transition_frames: số frame zero chèn giữa 2 từ
+        transition_frames: số frame zero chèn giữa 2 từ (chỉ trong masked_seq)
 
     Returns:
         dict:
-            full_sequence: (T_total, 1659) — sequence hoàn chỉnh (signs + transitions zero)
-            masked_sequence: (T_total, 1659) — giống full nhưng transition=0
-            frame_mask: (T_total,) bool — True = transition frame (cần sinh)
-            word_lengths: list[int] — số frame mỗi từ
-            num_words: int
+            full_sequence:   (T_words, 1659)  — chỉ word frames, không zeros
+            masked_sequence: (T_total, 1659)  — word frames + zero transitions
+            frame_mask:      (T_total,)       — 1 = transition frame, 0 = word frame
+            word_lengths:    list[int]        — số frame mỗi từ
+            num_words:       int
     """
     segments = []
     for p in word_paths:
@@ -65,32 +70,30 @@ def build_sentence_sample(word_paths, transition_frames=10):
     feat_dim = segments[0].shape[1]  # 1659
     transition_zeros = np.zeros((transition_frames, feat_dim), dtype=np.float32)
 
-    # Ghép: [word0] [zeros] [word1] [zeros] ... [wordN-1]
-    full_parts = []
-    mask_parts = []
-    word_lengths = []
+    word_lengths = [len(seg) for seg in segments]
 
+    # full_sequence = concat trực tiếp word frames (ground truth, không zeros)
+    full_sequence = np.concatenate(segments, axis=0)   # (T_words, 1659)
+
+    # masked_sequence = word frames + zero transition frames (observation condition)
+    masked_parts = []
+    mask_parts   = []
     for i, seg in enumerate(segments):
-        full_parts.append(seg)
-        mask_parts.append(np.zeros_like(seg))  # word frames: mask=False (observed)
-        word_lengths.append(len(seg))
-
+        masked_parts.append(seg)
+        mask_parts.append(np.zeros(len(seg), dtype=np.float32))   # word frame → mask=0
         if i < len(segments) - 1:
-            full_parts.append(transition_zeros.copy())
-            mask_parts.append(np.ones((transition_frames, feat_dim), dtype=np.float32))  # transition: mask=True
+            masked_parts.append(transition_zeros.copy())
+            mask_parts.append(np.ones(transition_frames, dtype=np.float32))  # transition → mask=1
 
-    full_sequence = np.concatenate(full_parts, axis=0)   # (T_total, 1659)
-    frame_mask = np.concatenate(mask_parts, axis=0)       # (T_total, 1659)
-
-    # masked_sequence: observed frames giữ nguyên, transition frames = 0
-    masked_sequence = full_sequence * (1.0 - frame_mask)  # zeros at transition
+    masked_sequence = np.concatenate(masked_parts, axis=0)  # (T_total, 1659)
+    frame_mask      = np.concatenate(mask_parts,   axis=0)  # (T_total,)
 
     return {
-        'full_sequence': full_sequence,       # (T_total, 1659)
-        'masked_sequence': masked_sequence,   # (T_total, 1659)
-        'frame_mask': frame_mask[:, 0],       # (T_total,) — 1 = transition
-        'word_lengths': word_lengths,
-        'num_words': len(segments),
+        'full_sequence':   full_sequence,    # (T_words, 1659) — ground truth
+        'masked_sequence': masked_sequence,  # (T_total, 1659) — observation
+        'frame_mask':      frame_mask,       # (T_total,)
+        'word_lengths':    word_lengths,
+        'num_words':       len(segments),
     }
 
 
