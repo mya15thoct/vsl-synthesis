@@ -100,7 +100,7 @@ def prepare_mict_dataset(
     transition_frames: int = 10,
     min_words: int = 2,
     max_words: int = 5,
-    samples_per_combo: int = 1,
+    samples_per_combo: int = 1, # This parameter is not used in the current implementation
     max_samples: int = 50000,
     train_split: float = 0.9,
     seed: int = 42,
@@ -134,74 +134,85 @@ def prepare_mict_dataset(
     train_dir.mkdir(parents=True, exist_ok=True)
     val_dir.mkdir(parents=True, exist_ok=True)
 
-    samples = []
-    print(f"\nGenerating sentence samples (min={min_words}, max={max_words} words)...")
+    # First pass: Generate recipes for samples (chosen words and their paths)
+    # This avoids accumulating full data in RAM
+    sample_recipes = []
+    print(f"\nGenerating sentence sample recipes (min={min_words}, max={max_words} words)...")
 
-    while len(samples) < max_samples:
+    while len(sample_recipes) < max_samples:
         # Chọn ngẫu nhiên N từ
         n_words = random.randint(min_words, max_words)
         if len(word_names) < n_words:
+            print(f"Warning: Not enough unique words ({len(word_names)}) to pick {n_words}. Stopping recipe generation.")
             break
         chosen_words = random.sample(word_names, n_words)
 
         # Chọn ngẫu nhiên 1 video cho mỗi từ
         paths = [random.choice(word_files[w]) for w in chosen_words]
+        sample_recipes.append({'words': chosen_words, 'paths': paths})
 
-        try:
-            sample = build_sentence_sample(paths, transition_frames)
-            sample['words'] = chosen_words
-            samples.append(sample)
-        except Exception as e:
-            continue
+        if len(sample_recipes) % 5000 == 0:
+            print(f"  Generated {len(sample_recipes)} recipes...")
 
-        if len(samples) % 5000 == 0:
-            print(f"  Generated {len(samples)} samples...")
+    print(f"Total recipes generated: {len(sample_recipes)}")
 
-    print(f"Total samples: {len(samples)}")
+    # Shuffle và chia train/val recipes
+    random.shuffle(sample_recipes)
+    split_idx = int(len(sample_recipes) * train_split)
+    train_recipes = sample_recipes[:split_idx]
+    val_recipes = sample_recipes[split_idx:]
 
-    # Shuffle và chia train/val
-    random.shuffle(samples)
-    split_idx = int(len(samples) * train_split)
-    train_samples = samples[:split_idx]
-    val_samples = samples[split_idx:]
-
-    # Lưu
-    print(f"\nSaving {len(train_samples)} train, {len(val_samples)} val samples...")
+    # Second pass: Build and save samples incrementally
+    print(f"\nSaving {len(train_recipes)} train, {len(val_recipes)} val samples...")
 
     stats = {
-        'total': len(samples),
-        'train': len(train_samples),
-        'val': len(val_samples),
+        'total': len(sample_recipes),
+        'train': len(train_recipes),
+        'val': len(val_recipes),
         'transition_frames': transition_frames,
         'min_words': min_words,
         'max_words': max_words,
     }
 
-    for idx, s in enumerate(tqdm(train_samples, desc="Saving train")):
-        np.savez_compressed(
-            train_dir / f"sample_{idx:06d}.npz",
-            full_sequence=s['full_sequence'],
-            masked_sequence=s['masked_sequence'],
-            frame_mask=s['frame_mask'].astype(np.float32),
-            word_lengths=np.array(s['word_lengths'], dtype=np.int32),
-            metadata=json.dumps({'words': s['words'], 'num_words': s['num_words']})
-        )
+    for idx, recipe in enumerate(tqdm(train_recipes, desc="Saving train")):
+        try:
+            s = build_sentence_sample(recipe['paths'], transition_frames)
+            s['words'] = recipe['words']
+            s['num_words'] = len(recipe['words']) # Ensure num_words is set correctly
+            np.savez_compressed(
+                train_dir / f"sample_{idx:06d}.npz",
+                full_sequence=s['full_sequence'],
+                masked_sequence=s['masked_sequence'],
+                frame_mask=s['frame_mask'].astype(np.float32),
+                word_lengths=np.array(s['word_lengths'], dtype=np.int32),
+                metadata=json.dumps({'words': s['words'], 'num_words': s['num_words']})
+            )
+        except Exception as e:
+            print(f"Error processing train sample {idx} (words: {recipe['words']}): {e}")
+            continue
 
-    for idx, s in enumerate(tqdm(val_samples, desc="Saving val")):
-        np.savez_compressed(
-            val_dir / f"sample_{idx:06d}.npz",
-            full_sequence=s['full_sequence'],
-            masked_sequence=s['masked_sequence'],
-            frame_mask=s['frame_mask'].astype(np.float32),
-            word_lengths=np.array(s['word_lengths'], dtype=np.int32),
-            metadata=json.dumps({'words': s['words'], 'num_words': s['num_words']})
-        )
+    for idx, recipe in enumerate(tqdm(val_recipes, desc="Saving val")):
+        try:
+            s = build_sentence_sample(recipe['paths'], transition_frames)
+            s['words'] = recipe['words']
+            s['num_words'] = len(recipe['words']) # Ensure num_words is set correctly
+            np.savez_compressed(
+                val_dir / f"sample_{idx:06d}.npz",
+                full_sequence=s['full_sequence'],
+                masked_sequence=s['masked_sequence'],
+                frame_mask=s['frame_mask'].astype(np.float32),
+                word_lengths=np.array(s['word_lengths'], dtype=np.int32),
+                metadata=json.dumps({'words': s['words'], 'num_words': s['num_words']})
+            )
+        except Exception as e:
+            print(f"Error processing val sample {idx} (words: {recipe['words']}): {e}")
+            continue
 
     with open(output_dir / "metadata.json", 'w') as f:
         json.dump(stats, f, indent=2)
 
     print(f"\nDone! Saved to {output_dir}")
-    print(f"  Train: {len(train_samples)} | Val: {len(val_samples)}")
+    print(f"  Train: {len(train_recipes)} | Val: {len(val_recipes)}")
 
 
 def main():
