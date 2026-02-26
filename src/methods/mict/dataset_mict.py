@@ -28,12 +28,24 @@ class MicTDataset(Dataset):
         """
         self.data_dir = Path(data_dir) / split
         self.max_len = max_len
-        self.files = sorted(self.data_dir.glob("*.npz"))
+        all_files = sorted(self.data_dir.glob("*.npz"))
 
-        if len(self.files) == 0:
+        if len(all_files) == 0:
             raise FileNotFoundError(f"No .npz files found in {self.data_dir}")
 
-        print(f"MicTDataset [{split}]: {len(self.files)} samples")
+        # Filter out corrupt files (BadZipFile, incomplete writes)
+        self.files = []
+        for f in all_files:
+            try:
+                import zipfile
+                with zipfile.ZipFile(f, 'r'):
+                    pass
+                self.files.append(f)
+            except Exception:
+                pass
+
+        n_bad = len(all_files) - len(self.files)
+        print(f"MicTDataset [{split}]: {len(self.files)} samples ({n_bad} corrupt skipped)")
 
     def __len__(self):
         return len(self.files)
