@@ -109,7 +109,10 @@ def run_inference(
 
     generated = generated[0].cpu().numpy()  # (T_total, 1659)
 
-    # Denormalize
+    # Clamp trước khi denormalize — lệch nhỏ bị phóng to 4x nếu không clamp
+    generated = np.clip(generated, 0.0, 1.0)
+
+    # Denormalize: [0,1] → [-2,2]
     generated_raw = denormalize(generated)
 
     # Extract only transition frames

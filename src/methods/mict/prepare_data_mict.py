@@ -44,22 +44,13 @@ def build_sentence_sample(word_paths, transition_frames=10):
     """
     Ghép N từ thành 1 sequence câu.
 
-    full_sequence:   concat trực tiếp các word frames (KHÔNG có zeros)
-                     → đây là ground truth model cần học reconstruct
-    masked_sequence: word frames + zero transition frames ở giữa
-                     → đây là observation condition (input) lúc inference
+    full_sequence:        word frames only (T_words, 1659)
+    masked_sequence:      word frames + zero transitions (T_total, 1659)  — inference obs
+    interpolated_sequence: word frames + LINEAR INTERP transitions (T_total, 1659) — training GT
 
-    Args:
-        word_paths: list of Path — .npy files cho từng từ trong câu
-        transition_frames: số frame zero chèn giữa 2 từ (chỉ trong masked_seq)
-
-    Returns:
-        dict:
-            full_sequence:   (T_words, 1659)  — chỉ word frames, không zeros
-            masked_sequence: (T_total, 1659)  — word frames + zero transitions
-            frame_mask:      (T_total,)       — 1 = transition frame, 0 = word frame
-            word_lengths:    list[int]        — số frame mỗi từ
-            num_words:       int
+    Linear interp: transition giữa word[i] và word[i+1] là lerp từ
+    frame cuối word[i] đến frame đầu word[i+1].
+    → Đây là pseudo ground truth để model học smooth motion ở transitions.
     """
     segments = []
     for p in word_paths:
@@ -68,32 +59,50 @@ def build_sentence_sample(word_paths, transition_frames=10):
         segments.append(seg)
 
     feat_dim = segments[0].shape[1]  # 1659
-    transition_zeros = np.zeros((transition_frames, feat_dim), dtype=np.float32)
-
     word_lengths = [len(seg) for seg in segments]
 
-    # full_sequence = concat trực tiếp word frames (ground truth, không zeros)
+    # full_sequence = concat word frames only (no transitions)
     full_sequence = np.concatenate(segments, axis=0)   # (T_words, 1659)
 
-    # masked_sequence = word frames + zero transition frames (observation condition)
+    # Build T_total sequences
     masked_parts = []
+    interp_parts = []
     mask_parts   = []
+
     for i, seg in enumerate(segments):
         masked_parts.append(seg)
-        mask_parts.append(np.zeros(len(seg), dtype=np.float32))   # word frame → mask=0
-        if i < len(segments) - 1:
-            masked_parts.append(transition_zeros.copy())
-            mask_parts.append(np.ones(transition_frames, dtype=np.float32))  # transition → mask=1
+        interp_parts.append(seg)
+        mask_parts.append(np.zeros(len(seg), dtype=np.float32))   # word → mask=0
 
-    masked_sequence = np.concatenate(masked_parts, axis=0)  # (T_total, 1659)
-    frame_mask      = np.concatenate(mask_parts,   axis=0)  # (T_total,)
+        if i < len(segments) - 1:
+            # last frame of word[i], first frame of word[i+1]
+            end_pose   = segments[i][-1]       # (1659,)
+            start_pose = segments[i + 1][0]    # (1659,)
+
+            # zeros transition (for inference obs)
+            masked_parts.append(np.zeros((transition_frames, feat_dim), dtype=np.float32))
+
+            # linear interpolation transition (for training GT)
+            alphas = np.linspace(0.0, 1.0, transition_frames + 2)[1:-1]  # exclude endpoints
+            interp = np.stack([
+                (1.0 - a) * end_pose + a * start_pose
+                for a in alphas
+            ], axis=0)  # (transition_frames, 1659)
+            interp_parts.append(interp)
+
+            mask_parts.append(np.ones(transition_frames, dtype=np.float32))  # transition → 1
+
+    masked_sequence       = np.concatenate(masked_parts, axis=0)  # (T_total, 1659)
+    interpolated_sequence = np.concatenate(interp_parts, axis=0)  # (T_total, 1659)
+    frame_mask            = np.concatenate(mask_parts,   axis=0)  # (T_total,)
 
     return {
-        'full_sequence':   full_sequence,    # (T_words, 1659) — ground truth
-        'masked_sequence': masked_sequence,  # (T_total, 1659) — observation
-        'frame_mask':      frame_mask,       # (T_total,)
-        'word_lengths':    word_lengths,
-        'num_words':       len(segments),
+        'full_sequence':         full_sequence,          # (T_words, 1659)
+        'masked_sequence':       masked_sequence,        # (T_total, 1659) — zeros at transitions
+        'interpolated_sequence': interpolated_sequence,  # (T_total, 1659) — lerp at transitions
+        'frame_mask':            frame_mask,             # (T_total,) — 1=transition
+        'word_lengths':          word_lengths,
+        'num_words':             len(segments),
     }
 
 
@@ -202,6 +211,7 @@ def prepare_mict_dataset(
                 train_dir / f"sample_{idx:06d}.npz",
                 full_sequence=s['full_sequence'],
                 masked_sequence=s['masked_sequence'],
+                interpolated_sequence=s['interpolated_sequence'],
                 frame_mask=s['frame_mask'].astype(np.float32),
                 word_lengths=np.array(s['word_lengths'], dtype=np.int32),
                 metadata=json.dumps({'words': s['words'], 'num_words': s['num_words']})
@@ -219,6 +229,7 @@ def prepare_mict_dataset(
                 val_dir / f"sample_{idx:06d}.npz",
                 full_sequence=s['full_sequence'],
                 masked_sequence=s['masked_sequence'],
+                interpolated_sequence=s['interpolated_sequence'],
                 frame_mask=s['frame_mask'].astype(np.float32),
                 word_lengths=np.array(s['word_lengths'], dtype=np.int32),
                 metadata=json.dumps({'words': s['words'], 'num_words': s['num_words']})

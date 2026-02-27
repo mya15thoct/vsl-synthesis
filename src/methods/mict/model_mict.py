@@ -185,10 +185,15 @@ class DenoiserBlock(nn.Module):
         mc: torch.Tensor,          # (B, T, D) — encoded context (K, V)
         self_attn_mask: Optional[torch.Tensor] = None,
         context_key_padding_mask: Optional[torch.Tensor] = None,
+        self_key_padding_mask: Optional[torch.Tensor] = None,  # True=padded
     ) -> torch.Tensor:
-        # Self-attention (pre-norm)
+        # Self-attention (pre-norm) — truyền cả key_padding_mask
         h = self.norm_self(x)
-        attn_out, _ = self.self_attn(h, h, h, attn_mask=self_attn_mask)
+        attn_out, _ = self.self_attn(
+            h, h, h,
+            attn_mask=self_attn_mask,
+            key_padding_mask=self_key_padding_mask,
+        )
         x = x + attn_out
 
         # Cross-attention: Q = x, K = V = mc
@@ -315,7 +320,11 @@ class MicTDiffusionModel(nn.Module):
 
         # Denoiser blocks: self-attn + cross-attn(mc') + FFN
         for block in self.dec_layers:
-            x = block(x, mc, context_key_padding_mask=context_key_padding_mask)
+            x = block(
+                x, mc,
+                context_key_padding_mask=context_key_padding_mask,
+                self_key_padding_mask=context_key_padding_mask,
+            )
 
         x = self.out_norm(x)
         pred_x0 = self.out_proj(x)         # (B, T, input_dim)
@@ -508,12 +517,16 @@ class MicTDDPMScheduler:
         # Start from pure noise
         x_t = torch.randn(B, T, D, device=device)
 
-        # Timestep schedule: T ... 0  (I steps, fractional decrement)
+        # Timestep schedule: T-1 ... 0  (I steps, ends at t=0)
         I = num_inference_steps
         N = self.num_timesteps
-        timestep_seq = [int(N - 1 - (N - 1) * i / I) for i in range(I)]
+        timestep_seq = [int(N - 1 - (N - 1) * i / (I - 1)) for i in range(I)]
+        # Đảm bảo kết thúc đúng t=0
+        timestep_seq[-1] = 0
 
         for i, t_int in enumerate(timestep_seq):
             x_t = self.ddpm_step(model, x_t, t_int, masked_seq, padding_mask)
 
+        # Safety clamp: đảm bảo output ∈ [0,1] trước khi denormalize
+        x_t = x_t.clamp(0.0, 1.0)
         return x_t
