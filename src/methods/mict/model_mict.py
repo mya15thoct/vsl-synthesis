@@ -477,6 +477,7 @@ class MicTDDPMScheduler:
         var   = beta_t * (1 - alpha_bar_prev) / (1 - alpha_bar_t)
         noise = torch.randn_like(x_t) if t_int > 1 else torch.zeros_like(x_t)
         x_prev = mean + var.sqrt() * noise
+        x_prev = x_prev.clamp(0.0, 1.0)   # clamp to normalized data range [0,1]
         return x_prev
 
     @torch.no_grad()
