@@ -28,13 +28,14 @@ import json
 
 
 # MediaPipe keypoint indices for wrist and hand landmarks
-# In the 1659-feature format: pose is first 132 features (33 kp x 4)
-# Wrist keypoints: left=15, right=16 (x,y,z,visibility)
+# In the 1659-feature format: pose is first 99 features (33 kp x 3: x,y,z, NO visibility)
+# Wrist keypoints: left=15, right=16
 LEFT_WRIST_IDX = 15    # MediaPipe pose landmark 15 = left wrist
 RIGHT_WRIST_IDX = 16   # MediaPipe pose landmark 16 = right wrist
 
-# Each pose landmark has 4 values (x, y, z, visibility)
-POSE_FEATURE_SIZE = 4
+# Each pose landmark has 3 values (x, y, z) — no visibility in 1659 format
+POSE_FEATURE_SIZE = 3
+POSE_TOTAL = 33 * POSE_FEATURE_SIZE  # 99
 
 
 def get_wrist_positions(skeleton_flat):
@@ -51,13 +52,13 @@ def get_wrist_positions(skeleton_flat):
     was_1d = skeleton_flat.ndim == 1
     if was_1d:
         skeleton_flat = skeleton_flat[np.newaxis, :]
-    
-    # Extract pose section (first 132 features)
-    pose = skeleton_flat[:, :132].reshape(-1, 33, 4)
-    
-    left_wrist = pose[:, LEFT_WRIST_IDX, :3]   # (frames, 3)
-    right_wrist = pose[:, RIGHT_WRIST_IDX, :3]  # (frames, 3)
-    
+
+    # Extract pose section (first 99 features = 33 × 3, no visibility)
+    pose = skeleton_flat[:, :POSE_TOTAL].reshape(-1, 33, POSE_FEATURE_SIZE)
+
+    left_wrist  = pose[:, LEFT_WRIST_IDX,  :3]   # (frames, 3)
+    right_wrist = pose[:, RIGHT_WRIST_IDX, :3]   # (frames, 3)
+
     if was_1d:
         return left_wrist[0], right_wrist[0]
     return left_wrist, right_wrist
