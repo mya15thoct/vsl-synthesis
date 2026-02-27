@@ -40,7 +40,7 @@ def load_npy(path):
     return data
 
 
-def build_sentence_sample(word_paths, transition_frames=10):
+def build_sentence_sample(word_paths, transition_frames=10, drop_last_frames=3):
     """
     Ghép N từ thành 1 sequence câu.
 
@@ -51,11 +51,17 @@ def build_sentence_sample(word_paths, transition_frames=10):
     Linear interp: transition giữa word[i] và word[i+1] là lerp từ
     frame cuối word[i] đến frame đầu word[i+1].
     → Đây là pseudo ground truth để model học smooth motion ở transitions.
+
+    drop_last_frames: cắt N frame cuối mỗi segment để loại bỏ phần rest pose
+    sót lại sau khi trim (buffer an toàn).
     """
     segments = []
     for p in word_paths:
         seg = load_npy(p)
         seg = normalize_skeleton(seg)
+        # Bỏ qua N frame cuối để loại rest pose còn sót sau trim
+        if drop_last_frames > 0 and len(seg) > drop_last_frames + 5:
+            seg = seg[:-drop_last_frames]
         segments.append(seg)
 
     feat_dim = segments[0].shape[1]  # 1659
@@ -116,6 +122,7 @@ def prepare_mict_dataset(
     max_samples: int = 50000,
     train_split: float = 0.9,
     seed: int = 42,
+    drop_last_frames: int = 3,
 ):
     """
     Tạo dataset MicT-style:
@@ -204,7 +211,7 @@ def prepare_mict_dataset(
 
     for idx, recipe in enumerate(tqdm(train_recipes, desc="Saving train")):
         try:
-            s = build_sentence_sample(recipe['paths'], transition_frames)
+            s = build_sentence_sample(recipe['paths'], transition_frames, drop_last_frames)
             s['words'] = recipe['words']
             s['num_words'] = len(recipe['words']) # Ensure num_words is set correctly
             np.savez_compressed(
@@ -222,7 +229,7 @@ def prepare_mict_dataset(
 
     for idx, recipe in enumerate(tqdm(val_recipes, desc="Saving val")):
         try:
-            s = build_sentence_sample(recipe['paths'], transition_frames)
+            s = build_sentence_sample(recipe['paths'], transition_frames, drop_last_frames)
             s['words'] = recipe['words']
             s['num_words'] = len(recipe['words']) # Ensure num_words is set correctly
             np.savez_compressed(
@@ -254,6 +261,8 @@ def main():
     parser.add_argument('--max_words', type=int, default=5)
     parser.add_argument('--max_samples', type=int, default=50000)
     parser.add_argument('--train_split', type=float, default=0.9)
+    parser.add_argument('--drop_last_frames', type=int, default=3,
+                        help='Bỏ N frame cuối mỗi segment để loại rest pose sót (default: 3)')
     args = parser.parse_args()
 
     prepare_mict_dataset(
@@ -264,6 +273,7 @@ def main():
         max_words=args.max_words,
         max_samples=args.max_samples,
         train_split=args.train_split,
+        drop_last_frames=args.drop_last_frames,
     )
 
 
