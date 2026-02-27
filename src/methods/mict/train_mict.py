@@ -42,23 +42,21 @@ from .dataset_mict import MicTDataset, collate_fn_mict
 # ---------------------------------------------------------------------------
 
 def mict_loss(
-    pred_x0: torch.Tensor,          # (B, T, D) — model output (predicted clean p0)
-    x0_clean: torch.Tensor,         # (B, T, D) — ground truth clean
-    padding_mask: torch.Tensor,     # (B, T)    — 1.0 = valid (non-padding)
+    pred_x0: torch.Tensor,          # (B, T, D) — model output
+    target: torch.Tensor,            # (B, T, D) — ground truth (masked_seqs: word frames = real, transitions = 0)
+    word_mask: torch.Tensor,         # (B, T)    — 1.0 = word frame (non-transition, non-padding)
 ) -> tuple:
     """
     L_joint (Eq. 8, MicT paper):
-
     L_joint = (1/S) * Σ_s |p0_s - p̂_s|
 
-    áp dụng trên TẤT CẢ valid frames (không chỉ transition).
-    Paper không có thêm MSE noise term.
+    Chỉ tính trên word frames (trans_mask=0, pad_mask=1).
+    Transition frames không có ground truth thật nên bỏ qua.
     """
-    valid_mask_exp = padding_mask.unsqueeze(-1)  # (B, T, 1)
-    n_valid = valid_mask_exp.sum() * pred_x0.shape[-1]
-    n_valid = n_valid.clamp(min=1.0)
+    mask_exp = word_mask.unsqueeze(-1)       # (B, T, 1)
+    n_valid = mask_exp.sum().clamp(min=1.0) * pred_x0.shape[-1]
 
-    mae_loss = (pred_x0 - x0_clean).abs() * valid_mask_exp
+    mae_loss = (pred_x0 - target).abs() * mask_exp
     total = mae_loss.sum() / n_valid
     return total, total.item()
 
@@ -95,33 +93,33 @@ def train_epoch(
     total_loss = 0.0
     pbar = tqdm(dataloader, desc=f"Epoch {epoch} [train]")
 
-    for full_seqs, _masked_seqs_fixed, _trans_masks, pad_masks in pbar:
-        # full_seqs:    (B, T, D) — ground truth complete sequence
-        # pad_masks:    (B, T)    — 1 = valid frame
-        # NOTE: masked_seqs / trans_masks from dataset là dùng cho inference
-        # Training: tạo random mask từ full_seqs (paper: prob=0.3)
-        full_seqs   = full_seqs.to(device)
-        pad_masks   = pad_masks.to(device)
+    for full_seqs, masked_seqs, trans_masks, pad_masks in pbar:
+        # full_seqs:    (B, T_words, D) — word frames only (ground truth)
+        # masked_seqs:  (B, T_total, D) — word frames + zero transitions
+        # trans_masks:  (B, T_total)    — 1 = transition frame
+        # pad_masks:    (B, T_words)    — 1 = valid word frame
 
-        B = full_seqs.shape[0]
+        masked_seqs = masked_seqs.to(device)   # (B, T_total, D)
+        trans_masks = trans_masks.to(device)   # (B, T_total)
 
-        # --- Paper: "random mask mechanism with probability 0.3" ---
-        obs_seq, _rand_mask = apply_random_mask(full_seqs, mask_prob)
+        B, T_total, D = masked_seqs.shape
 
-        # Sample random diffusion timestep
+        # word_mask: 1 = word frame, 0 = transition frame (no ground truth)
+        word_mask = (1.0 - trans_masks)         # (B, T_total)
+
+        # obs_seq: additional 30% masking on WORD frames only (keep transitions as 0)
+        extra = (torch.rand(B, T_total, device=device) < mask_prob).float() * word_mask
+        obs_seq = masked_seqs * (1.0 - extra.unsqueeze(-1))  # (B, T_total, D)
+
+        # Add noise to masked_seqs (T_total) — same length as inference
         t = torch.randint(0, scheduler.num_timesteps, (B,), device=device).long()
+        x_t, _ = scheduler.add_noise(masked_seqs, t)  # (B, T_total, D)
 
-        # Forward diffusion: x0 → x_t  (cosine αt)
-        x_t, _noise = scheduler.add_noise(full_seqs, t)
+        # Model: predict clean sequence
+        pred_x0, _ = model(x_t, t, obs_seq, None)
 
-        # key_padding_mask for transformer: True = padded
-        pad_key_mask = (pad_masks < 0.5)
-
-        # Model: denoise x_t conditioned on obs_seq → pred p0
-        pred_x0, _ = model(x_t, t, obs_seq, pad_key_mask)
-
-        # Loss: L_joint = MAE on all valid frames (Eq. 8)
-        loss, mae_v = mict_loss(pred_x0, full_seqs, pad_masks)
+        # Loss: L_joint = MAE on word frame positions only
+        loss, mae_v = mict_loss(pred_x0, masked_seqs, word_mask)
 
         optimizer.zero_grad()
         loss.backward()
@@ -129,11 +127,9 @@ def train_epoch(
         optimizer.step()
 
         total_loss += loss.item()
-
         pbar.set_postfix({'L_joint': f"{mae_v:.4f}"})
 
-    n = len(dataloader)
-    return total_loss / n
+    return total_loss / len(dataloader)
 
 
 def validate(
@@ -144,27 +140,24 @@ def validate(
     total_loss = 0.0
 
     with torch.no_grad():
-        for full_seqs, _masked_seqs_fixed, _trans_masks, pad_masks in tqdm(dataloader, desc="Validating"):
-            full_seqs   = full_seqs.to(device)
-            pad_masks   = pad_masks.to(device)
+        for full_seqs, masked_seqs, trans_masks, pad_masks in tqdm(dataloader, desc="Validating"):
+            masked_seqs = masked_seqs.to(device)
+            trans_masks = trans_masks.to(device)
 
-            B = full_seqs.shape[0]
+            B, T_total, D = masked_seqs.shape
+            word_mask = (1.0 - trans_masks)
 
-            # Same random masking as training
-            obs_seq, _ = apply_random_mask(full_seqs, mask_prob)
+            extra = (torch.rand(B, T_total, device=device) < mask_prob).float() * word_mask
+            obs_seq = masked_seqs * (1.0 - extra.unsqueeze(-1))
 
             t = torch.randint(0, scheduler.num_timesteps, (B,), device=device).long()
-            x_t, _noise = scheduler.add_noise(full_seqs, t)
+            x_t, _ = scheduler.add_noise(masked_seqs, t)
 
-            pad_key_mask = (pad_masks < 0.5)
-            pred_x0, _ = model(x_t, t, obs_seq, pad_key_mask)
-
-            loss, mae_v = mict_loss(pred_x0, full_seqs, pad_masks)
-
+            pred_x0, _ = model(x_t, t, obs_seq, None)
+            loss, _ = mict_loss(pred_x0, masked_seqs, word_mask)
             total_loss += loss.item()
 
-    n = len(dataloader)
-    return total_loss / n
+    return total_loss / len(dataloader)
 
 
 # ---------------------------------------------------------------------------

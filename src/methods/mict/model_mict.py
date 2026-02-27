@@ -458,12 +458,20 @@ class MicTDDPMScheduler:
         t_tensor = torch.full((B,), t_int, device=device, dtype=torch.long)
 
         pred_x0, _ = model(x_t, t_tensor, masked_seq, padding_mask)
-        pred_x0 = pred_x0.clamp(-1.5, 1.5)   # safety clamp
+
+        # Dynamic thresholding (Imagen-style): giữ relative structure cho high-dim data
+        # percentile 99.5% của |pred_x0| trên toàn bộ dims
+        flat = pred_x0.reshape(B, -1).abs()
+        s = torch.quantile(flat, 0.995, dim=1).clamp(min=1.0)  # (B,)
+        s = s.view(B, 1, 1)
+        pred_x0 = pred_x0.clamp(-s, s) / s   # rescale → [-1, 1], rồi clamp về [0,1]
+        pred_x0 = pred_x0.clamp(0.0, 1.0)    # data range [0,1]
+
 
         if t_int == 0:
             return pred_x0
 
-        # Compute x_{t-1} from x0 and x_t
+        # Compute x_{t-1} from x0 and x_t (dùng pred_x0 đã clamp)
         alpha_bar_t = self.alphas_cumprod[t_int]
         alpha_bar_prev = self.alphas_cumprod[t_int - 1]
         beta_t = self.betas[t_int]
@@ -477,7 +485,6 @@ class MicTDDPMScheduler:
         var   = beta_t * (1 - alpha_bar_prev) / (1 - alpha_bar_t)
         noise = torch.randn_like(x_t) if t_int > 1 else torch.zeros_like(x_t)
         x_prev = mean + var.sqrt() * noise
-        x_prev = x_prev.clamp(0.0, 1.0)   # clamp to normalized data range [0,1]
         return x_prev
 
     @torch.no_grad()
