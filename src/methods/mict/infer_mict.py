@@ -57,7 +57,7 @@ def build_masked_seq(word_npys, transition_frames=10):
             parts.append(zeros.copy())
 
     masked_seq = np.concatenate(parts, axis=0)  # (T_total, 1659)
-    return masked_seq, [len(s) for s in segments]
+    return masked_seq, [len(s) for s in segments], segments
 
 
 def run_inference(
@@ -89,7 +89,7 @@ def run_inference(
     print(f"  Epoch: {ckpt.get('epoch', '?')}  |  Val loss: {ckpt.get('val_loss', '?'):.4f}")
 
     # Build observation condition
-    masked_seq, word_lengths = build_masked_seq(word_npys, transition_frames)
+    masked_seq, word_lengths, original_segments_norm = build_masked_seq(word_npys, transition_frames)
     print(f"\nInput:")
     print(f"  Words: {len(word_npys)} ({word_lengths} frames each)")
     print(f"  Transition frames: {transition_frames} per gap")
@@ -129,7 +129,16 @@ def run_inference(
     for i, t in enumerate(transition_frames_out):
         print(f"  Transition {i+1}: {t.shape} | range [{t.min():.3f}, {t.max():.3f}]")
 
-    return generated_raw, transition_frames_out
+    # Assemble final sequence using original word frames and generated transitions
+    final_sequence_parts = []
+    for i, seg_norm in enumerate(original_segments_norm):
+        final_sequence_parts.append(denormalize(seg_norm)) # Denormalize original segments
+        if i < len(original_segments_norm) - 1:
+            final_sequence_parts.append(transition_frames_out[i])
+
+    final_sequence = np.concatenate(final_sequence_parts, axis=0)
+
+    return final_sequence, transition_frames_out
 
 
 def main():
