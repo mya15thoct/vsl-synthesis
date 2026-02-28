@@ -136,7 +136,7 @@ def run_inference(
         if i < len(original_segments_norm) - 1:
             final_sequence_parts.append(transition_frames_out[i])
 
-    final_sequence = np.concatenate(final_sequence_parts, axis=0)
+    final_sequence = np.concatenate([np.asarray(p, dtype=np.float32) for p in final_sequence_parts], axis=0)
 
     return final_sequence, transition_frames_out
 
