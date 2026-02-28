@@ -44,24 +44,54 @@ def load_npy(path):
     return data
 
 
-def build_masked_seq(word_npys, transition_frames=10, drop_last_frames=3):
+# Reuse canonical normalization logic from prepare_data_mict
+IDX_L_HIP      = 23 * 3
+IDX_R_HIP      = 24 * 3
+IDX_L_SHOULDER = 11 * 3
+IDX_R_SHOULDER = 12 * 3
+
+def canonical_normalize_skeleton(data_flat):
+    """Normalize scale/position: hip center → (0.5,0.5), torso height → 0.25."""
+    lhip = data_flat[:, IDX_L_HIP:IDX_L_HIP+2]
+    rhip = data_flat[:, IDX_R_HIP:IDX_R_HIP+2]
+    lsho = data_flat[:, IDX_L_SHOULDER:IDX_L_SHOULDER+2]
+    rsho = data_flat[:, IDX_R_SHOULDER:IDX_R_SHOULDER+2]
+    hip_center = (lhip + rhip) / 2
+    sho_center = (lsho + rsho) / 2
+    hip_mean   = hip_center.mean(axis=0)
+    torso_h    = max(np.linalg.norm(hip_center - sho_center, axis=1).mean(), 1e-3)
+    shift      = np.array([0.5, 0.5], dtype=np.float32) - hip_mean
+    result     = data_flat.copy()
+    result[:, 0::3] += shift[0]
+    result[:, 1::3] += shift[1]
+    scale = 0.25 / torso_h
+    result[:, 0::3] = (result[:, 0::3] - 0.5) * scale + 0.5
+    result[:, 1::3] = (result[:, 1::3] - 0.5) * scale + 0.5
+    return result
+
+
+def build_masked_seq(word_npys, transition_frames=10, drop_last_frames=8,
+                     drop_first_frames=3, canonical_norm=True):
     """Build masked_sequence (words + zero transitions) for inference."""
-    segments = [normalize(load_npy(p)) for p in word_npys]
-    # Bỏ N frame cuối để loại rest pose sót — match với prepare_data_mict.py
-    segments = [
-        s[:-drop_last_frames] if drop_last_frames > 0 and len(s) > drop_last_frames + 5 else s
-        for s in segments
-    ]
+    segments = []
+    for p in word_npys:
+        s = load_npy(p)
+        if canonical_norm:
+            s = canonical_normalize_skeleton(s)
+        s = normalize(s)
+        if drop_first_frames > 0 and len(s) > drop_first_frames + drop_last_frames + 5:
+            s = s[drop_first_frames:]
+        if drop_last_frames > 0 and len(s) > drop_last_frames + 5:
+            s = s[:-drop_last_frames]
+        segments.append(s)
     feat_dim = segments[0].shape[1]
     zeros = np.zeros((transition_frames, feat_dim), dtype=np.float32)
-
     parts = []
     for i, seg in enumerate(segments):
         parts.append(seg)
         if i < len(segments) - 1:
             parts.append(zeros.copy())
-
-    masked_seq = np.concatenate(parts, axis=0)  # (T_total, 1659)
+    masked_seq = np.concatenate(parts, axis=0)
     return masked_seq, [len(s) for s in segments], segments
 
 
@@ -71,7 +101,9 @@ def run_inference(
     transition_frames: int = 10,
     num_inference_steps: int = 50,
     device: str = None,
-    drop_last_frames: int = 3,
+    drop_last_frames: int = 8,
+    drop_first_frames: int = 3,
+    canonical_norm: bool = True,
 ):
     if device is None:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -96,7 +128,7 @@ def run_inference(
 
     # Build observation condition
     masked_seq, word_lengths, original_segments_norm = build_masked_seq(
-        word_npys, transition_frames, drop_last_frames
+        word_npys, transition_frames, drop_last_frames, drop_first_frames, canonical_norm
     )
     print(f"\nInput:")
     print(f"  Words: {len(word_npys)} ({word_lengths} frames each)")
@@ -161,8 +193,12 @@ def main():
     parser.add_argument('--inference_steps', type=int, default=50)
     parser.add_argument('--output_npy', default='mict_output.npy')
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--drop_last_frames', type=int, default=3,
-                        help='Bỏ N frame cuối mỗi word (match với prepare_data_mict, default: 3)')
+    parser.add_argument('--drop_last_frames', type=int, default=8,
+                        help='Bỏ N frame cuối mỗi word (default: 8)')
+    parser.add_argument('--drop_first_frames', type=int, default=3,
+                        help='Bỏ N frame đầu mỗi word (default: 3)')
+    parser.add_argument('--no_canonical', action='store_true',
+                        help='Tắt canonical normalization')
     args = parser.parse_args()
 
     random.seed(args.seed)
@@ -196,6 +232,8 @@ def main():
         transition_frames=args.transition_frames,
         num_inference_steps=args.inference_steps,
         drop_last_frames=args.drop_last_frames,
+        drop_first_frames=args.drop_first_frames,
+        canonical_norm=not args.no_canonical,
     )
 
     np.save(args.output_npy, generated)

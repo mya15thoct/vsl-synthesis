@@ -40,7 +40,63 @@ def load_npy(path):
     return data
 
 
-def build_sentence_sample(word_paths, transition_frames=10, drop_last_frames=3):
+# MediaPipe pose indices (x3 = no visibility format, 33kp x 3)
+IDX_L_HIP      = 23 * 3   # features 69-71
+IDX_R_HIP      = 24 * 3
+IDX_L_SHOULDER = 11 * 3
+IDX_R_SHOULDER = 12 * 3
+
+
+def canonical_normalize_skeleton(data_flat):
+    """
+    Normalize skeleton để loại bỏ scale/position khác nhau giữa các video.
+
+    Bước 1: Translate — dịch sao cho hip center trung bình = (0.5, 0.5)
+    Bước 2: Scale — chia cho torso height trung bình (shoulder → hip)
+
+    Giữ nguyên tất cả các kp khác (hand, face) vì chúng có coordinate
+    tương đối với đầu mối pose.
+    """
+    T = data_flat.shape[0]
+
+    # Extract hip and shoulder y-coords
+    lhip_xy  = data_flat[:, IDX_L_HIP:IDX_L_HIP+2]       # (T, 2)
+    rhip_xy  = data_flat[:, IDX_R_HIP:IDX_R_HIP+2]
+    lsho_xy  = data_flat[:, IDX_L_SHOULDER:IDX_L_SHOULDER+2]
+    rsho_xy  = data_flat[:, IDX_R_SHOULDER:IDX_R_SHOULDER+2]
+
+    hip_center  = (lhip_xy + rhip_xy)   / 2   # (T, 2) per frame
+    sho_center  = (lsho_xy + rsho_xy)   / 2
+
+    # Use MEAN across frames for stable canonical transform
+    hip_mean    = hip_center.mean(axis=0)      # (2,) [x_mean, y_mean]
+    torso_h     = np.linalg.norm(
+        hip_center - sho_center, axis=1
+    ).mean()                                    # scalar
+    torso_h     = max(torso_h, 1e-3)
+
+    # Translate: shift hip center to (0.5, 0.5)
+    target_hip  = np.array([0.5, 0.5], dtype=np.float32)
+    shift       = target_hip - hip_mean         # (2,)
+
+    result = data_flat.copy()
+    # Apply shift to ALL x,y pairs (every 3rd feature starting at 0 and 1)
+    # Feature layout: [x0, y0, z0, x1, y1, z1, ...]
+    result[:, 0::3] += shift[0]   # shift all x
+    result[:, 1::3] += shift[1]   # shift all y
+
+    # Scale around new hip center (0.5, 0.5)
+    canonical_torso = 0.25   # target torso height in normalized space
+    scale = canonical_torso / torso_h
+    # Scale x,y relative to hip center
+    result[:, 0::3] = (result[:, 0::3] - 0.5) * scale + 0.5
+    result[:, 1::3] = (result[:, 1::3] - 0.5) * scale + 0.5
+
+    return result
+
+
+def build_sentence_sample(word_paths, transition_frames=10, drop_last_frames=8,
+                           drop_first_frames=3, canonical_norm=True):
     """
     Ghép N từ thành 1 sequence câu.
 
@@ -48,18 +104,20 @@ def build_sentence_sample(word_paths, transition_frames=10, drop_last_frames=3):
     masked_sequence:      word frames + zero transitions (T_total, 1659)  — inference obs
     interpolated_sequence: word frames + LINEAR INTERP transitions (T_total, 1659) — training GT
 
-    Linear interp: transition giữa word[i] và word[i+1] là lerp từ
-    frame cuối word[i] đến frame đầu word[i+1].
-    → Đây là pseudo ground truth để model học smooth motion ở transitions.
-
-    drop_last_frames: cắt N frame cuối mỗi segment để loại bỏ phần rest pose
-    sót lại sau khi trim (buffer an toàn).
+    drop_last_frames:  bỏ N frame cuối (rest pose sau khi ký)
+    drop_first_frames: bỏ N frame đầu (rest pose trước khi ký)
+    canonical_norm:    chuẩn hóa scale/position về canonical (loại zoom khác nhau)
     """
     segments = []
     for p in word_paths:
         seg = load_npy(p)
+        # Canonical normalization trước khi clip/normalize — để scale đồng nhất
+        if canonical_norm:
+            seg = canonical_normalize_skeleton(seg)
         seg = normalize_skeleton(seg)
-        # Bỏ qua N frame cuối để loại rest pose còn sót sau trim
+        # Trim đầu và cuối
+        if drop_first_frames > 0 and len(seg) > drop_first_frames + drop_last_frames + 5:
+            seg = seg[drop_first_frames:]
         if drop_last_frames > 0 and len(seg) > drop_last_frames + 5:
             seg = seg[:-drop_last_frames]
         segments.append(seg)
@@ -118,11 +176,13 @@ def prepare_mict_dataset(
     transition_frames: int = 10,
     min_words: int = 2,
     max_words: int = 5,
-    samples_per_combo: int = 1, # This parameter is not used in the current implementation
+    samples_per_combo: int = 1,
     max_samples: int = 50000,
     train_split: float = 0.9,
     seed: int = 42,
-    drop_last_frames: int = 3,
+    drop_last_frames: int = 8,
+    drop_first_frames: int = 3,
+    canonical_norm: bool = True,
 ):
     """
     Tạo dataset MicT-style:
@@ -211,7 +271,10 @@ def prepare_mict_dataset(
 
     for idx, recipe in enumerate(tqdm(train_recipes, desc="Saving train")):
         try:
-            s = build_sentence_sample(recipe['paths'], transition_frames, drop_last_frames)
+            s = build_sentence_sample(
+                recipe['paths'], transition_frames,
+                drop_last_frames, drop_first_frames, canonical_norm
+            )
             s['words'] = recipe['words']
             s['num_words'] = len(recipe['words']) # Ensure num_words is set correctly
             np.savez_compressed(
@@ -229,7 +292,10 @@ def prepare_mict_dataset(
 
     for idx, recipe in enumerate(tqdm(val_recipes, desc="Saving val")):
         try:
-            s = build_sentence_sample(recipe['paths'], transition_frames, drop_last_frames)
+            s = build_sentence_sample(
+                recipe['paths'], transition_frames,
+                drop_last_frames, drop_first_frames, canonical_norm
+            )
             s['words'] = recipe['words']
             s['num_words'] = len(recipe['words']) # Ensure num_words is set correctly
             np.savez_compressed(
@@ -261,8 +327,12 @@ def main():
     parser.add_argument('--max_words', type=int, default=5)
     parser.add_argument('--max_samples', type=int, default=50000)
     parser.add_argument('--train_split', type=float, default=0.9)
-    parser.add_argument('--drop_last_frames', type=int, default=3,
-                        help='Bỏ N frame cuối mỗi segment để loại rest pose sót (default: 3)')
+    parser.add_argument('--drop_last_frames', type=int, default=8,
+                        help='Bỏ N frame cuối mỗi segment để loại rest pose sót (default: 8)')
+    parser.add_argument('--drop_first_frames', type=int, default=3,
+                        help='Bỏ N frame đầu mỗi segment để loại rest pose trước ký (default: 3)')
+    parser.add_argument('--no_canonical', action='store_true',
+                        help='Tắt canonical normalization (scale/position)')
     args = parser.parse_args()
 
     prepare_mict_dataset(
@@ -274,8 +344,10 @@ def main():
         max_samples=args.max_samples,
         train_split=args.train_split,
         drop_last_frames=args.drop_last_frames,
+        drop_first_frames=args.drop_first_frames,
+        canonical_norm=not args.no_canonical,
     )
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
