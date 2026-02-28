@@ -44,9 +44,14 @@ def load_npy(path):
     return data
 
 
-def build_masked_seq(word_npys, transition_frames=10):
+def build_masked_seq(word_npys, transition_frames=10, drop_last_frames=3):
     """Build masked_sequence (words + zero transitions) for inference."""
     segments = [normalize(load_npy(p)) for p in word_npys]
+    # Bỏ N frame cuối để loại rest pose sót — match với prepare_data_mict.py
+    segments = [
+        s[:-drop_last_frames] if drop_last_frames > 0 and len(s) > drop_last_frames + 5 else s
+        for s in segments
+    ]
     feat_dim = segments[0].shape[1]
     zeros = np.zeros((transition_frames, feat_dim), dtype=np.float32)
 
@@ -66,6 +71,7 @@ def run_inference(
     transition_frames: int = 10,
     num_inference_steps: int = 50,
     device: str = None,
+    drop_last_frames: int = 3,
 ):
     if device is None:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -89,7 +95,9 @@ def run_inference(
     print(f"  Epoch: {ckpt.get('epoch', '?')}  |  Val loss: {ckpt.get('val_loss', '?'):.4f}")
 
     # Build observation condition
-    masked_seq, word_lengths, original_segments_norm = build_masked_seq(word_npys, transition_frames)
+    masked_seq, word_lengths, original_segments_norm = build_masked_seq(
+        word_npys, transition_frames, drop_last_frames
+    )
     print(f"\nInput:")
     print(f"  Words: {len(word_npys)} ({word_lengths} frames each)")
     print(f"  Transition frames: {transition_frames} per gap")
@@ -153,6 +161,8 @@ def main():
     parser.add_argument('--inference_steps', type=int, default=50)
     parser.add_argument('--output_npy', default='mict_output.npy')
     parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--drop_last_frames', type=int, default=3,
+                        help='Bỏ N frame cuối mỗi word (match với prepare_data_mict, default: 3)')
     args = parser.parse_args()
 
     random.seed(args.seed)
@@ -185,6 +195,7 @@ def main():
         word_npys=word_npys,
         transition_frames=args.transition_frames,
         num_inference_steps=args.inference_steps,
+        drop_last_frames=args.drop_last_frames,
     )
 
     np.save(args.output_npy, generated)
