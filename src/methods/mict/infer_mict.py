@@ -70,8 +70,44 @@ def canonical_normalize_skeleton(data_flat):
     return result
 
 
+def adaptive_trim(seg, motion_threshold=0.003, min_keep=10, max_drop=20):
+    """
+    Tự động trim frames đầu/cuối có motion thấp (rest pose).
+    Tìm frame đầu tiên và cuối cùng vượt motion_threshold.
+    """
+    LEFT_WRIST_Y  = 15 * 3 + 1
+    RIGHT_WRIST_Y = 16 * 3 + 1
+    lw = seg[:, LEFT_WRIST_Y]
+    rw = seg[:, RIGHT_WRIST_Y]
+    motion = (np.abs(np.diff(lw)) + np.abs(np.diff(rw))) / 2  # (T-1,)
+
+    # Tìm frame đầu tiên có motion > threshold
+    start = 0
+    for i in range(min(max_drop, len(motion))):
+        if motion[i] > motion_threshold:
+            start = i
+            break
+
+    # Tìm frame cuối cùng có motion > threshold (scan ngược)
+    end = len(seg)
+    for i in range(min(max_drop, len(motion))):
+        idx = len(motion) - 1 - i
+        if motion[idx] > motion_threshold:
+            end = idx + 2  # +2 vì motion[i] = diff frame i→i+1
+            break
+
+    # Đảm bảo giữ lại ít nhất min_keep frames
+    if end - start < min_keep:
+        mid = (start + end) // 2
+        start = max(0, mid - min_keep // 2)
+        end   = min(len(seg), start + min_keep)
+
+    return seg[start:end]
+
+
 def build_masked_seq(word_npys, transition_frames=10, drop_last_frames=8,
-                     drop_first_frames=3, canonical_norm=True):
+                     drop_first_frames=3, canonical_norm=True,
+                     adaptive=True, motion_threshold=0.005):
     """Build masked_sequence (words + zero transitions) for inference."""
     segments = []
     for p in word_npys:
@@ -79,10 +115,14 @@ def build_masked_seq(word_npys, transition_frames=10, drop_last_frames=8,
         if canonical_norm:
             s = canonical_normalize_skeleton(s)
         s = normalize(s)
-        if drop_first_frames > 0 and len(s) > drop_first_frames + drop_last_frames + 5:
-            s = s[drop_first_frames:]
-        if drop_last_frames > 0 and len(s) > drop_last_frames + 5:
-            s = s[:-drop_last_frames]
+        if adaptive:
+            # Adaptive trim: dựa vào wrist motion thực tế
+            s = adaptive_trim(s, motion_threshold=motion_threshold)
+        else:
+            if drop_first_frames > 0 and len(s) > drop_first_frames + drop_last_frames + 5:
+                s = s[drop_first_frames:]
+            if drop_last_frames > 0 and len(s) > drop_last_frames + 5:
+                s = s[:-drop_last_frames]
         segments.append(s)
     feat_dim = segments[0].shape[1]
     zeros = np.zeros((transition_frames, feat_dim), dtype=np.float32)
@@ -104,6 +144,8 @@ def run_inference(
     drop_last_frames: int = 8,
     drop_first_frames: int = 3,
     canonical_norm: bool = True,
+    adaptive: bool = True,
+    motion_threshold: float = 0.005,
 ):
     if device is None:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -128,7 +170,8 @@ def run_inference(
 
     # Build observation condition
     masked_seq, word_lengths, original_segments_norm = build_masked_seq(
-        word_npys, transition_frames, drop_last_frames, drop_first_frames, canonical_norm
+        word_npys, transition_frames, drop_last_frames, drop_first_frames,
+        canonical_norm, adaptive, motion_threshold
     )
     print(f"\nInput:")
     print(f"  Words: {len(word_npys)} ({word_lengths} frames each)")
@@ -199,6 +242,10 @@ def main():
                         help='Bỏ N frame đầu mỗi word (default: 3)')
     parser.add_argument('--no_canonical', action='store_true',
                         help='Tắt canonical normalization')
+    parser.add_argument('--no_adaptive', action='store_true',
+                        help='Tắt adaptive trim, dùng fixed drop_first/last thay thế')
+    parser.add_argument('--motion_threshold', type=float, default=0.005,
+                        help='Ngưỡng motion để phát hiện rest pose (default: 0.005)')
     args = parser.parse_args()
 
     random.seed(args.seed)
@@ -234,6 +281,8 @@ def main():
         drop_last_frames=args.drop_last_frames,
         drop_first_frames=args.drop_first_frames,
         canonical_norm=not args.no_canonical,
+        adaptive=not args.no_adaptive,
+        motion_threshold=args.motion_threshold,
     )
 
     np.save(args.output_npy, generated)
