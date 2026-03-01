@@ -232,20 +232,20 @@ def run_inference(
         Dịch chuyển toàn bộ hand landmarks để hand[0] khớp với pose wrist.
         frames_raw: (T, 1659) trong space denormalized
         """
-        out = frames_raw.copy()
+        out = np.array(frames_raw, dtype=np.float32)
+        lw_s, lw_e = 15*3, 15*3+3      # pose left wrist feat
+        rw_s, rw_e = 16*3, 16*3+3      # pose right wrist feat
+        lh_s, lh_e = 99,  99+21*3      # left hand all feats
+        rh_s, rh_e = 162, 162+21*3     # right hand all feats
         for t in range(len(out)):
-            # Left hand: shift toàn bộ 63 features
-            pose_lw  = out[t, POSE_L_WRIST]                      # (3,)
-            hand_lw  = out[t, LHAND_BASE:LHAND_BASE+3]           # (3,)
-            shift_l  = pose_lw - hand_lw
-            out[t, LHAND_BASE:LHAND_BASE+N_HAND_FEAT] += np.tile(shift_l, 21)
-
-            # Right hand
-            pose_rw  = out[t, POSE_R_WRIST]
-            hand_rw  = out[t, RHAND_BASE:RHAND_BASE+3]
-            shift_r  = pose_rw - hand_rw
-            out[t, RHAND_BASE:RHAND_BASE+N_HAND_FEAT] += np.tile(shift_r, 21)
+            # Left hand snap
+            shift_l = out[t, lw_s:lw_e] - out[t, lh_s:lh_s+3]
+            out[t, lh_s:lh_e] = out[t, lh_s:lh_e] + np.tile(shift_l.astype(np.float32), 21)
+            # Right hand snap
+            shift_r = out[t, rw_s:rw_e] - out[t, rh_s:rh_s+3]
+            out[t, rh_s:rh_e] = out[t, rh_s:rh_e] + np.tile(shift_r.astype(np.float32), 21)
         return out
+
 
     # Apply snap to each transition segment
     transition_frames_out = [snap_hands_to_wrist(t) for t in transition_frames_out]
