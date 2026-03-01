@@ -110,22 +110,22 @@ def adaptive_trim(seg, motion_threshold=0.01, min_keep=10, max_drop=25, window=3
 
 def build_masked_seq(word_npys, transition_frames=10, drop_last_frames=8,
                      drop_first_frames=3, canonical_norm=True,
-                     adaptive=True, motion_threshold=0.005):
+                     adaptive=True, motion_threshold=0.003):
     """Build masked_sequence (words + zero transitions) for inference."""
     segments = []
     for p in word_npys:
         s = load_npy(p)
         if canonical_norm:
             s = canonical_normalize_skeleton(s)
-        s = normalize(s)
         if adaptive:
-            # Adaptive trim: dựa vào wrist motion thực tế
+            # Adaptive trim trước normalize — motion values vẫn ở scale gốc
             s = adaptive_trim(s, motion_threshold=motion_threshold)
         else:
             if drop_first_frames > 0 and len(s) > drop_first_frames + drop_last_frames + 5:
                 s = s[drop_first_frames:]
             if drop_last_frames > 0 and len(s) > drop_last_frames + 5:
                 s = s[:-drop_last_frames]
+        s = normalize(s)  # normalize SAU khi đã trim
         segments.append(s)
     feat_dim = segments[0].shape[1]
     zeros = np.zeros((transition_frames, feat_dim), dtype=np.float32)
