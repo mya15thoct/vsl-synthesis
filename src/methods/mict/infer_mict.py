@@ -70,10 +70,11 @@ def canonical_normalize_skeleton(data_flat):
     return result
 
 
-def adaptive_trim(seg, motion_threshold=0.01, min_keep=10, max_drop=25, window=3):
+def adaptive_trim(seg, motion_threshold=0.003, min_keep=10, max_drop=25, window=3):
     """
     Tự động trim frames đầu/cuối có motion thấp (rest pose).
-    Tìm vùng motion sustained (>= window frames liên tiếp vượt threshold).
+    - Đầu: scan tối đa max_drop frames từ đầu
+    - Cuối: scan TOÀN BỘ từ cuối (không giới hạn) để tìm frame active cuối cùng
     """
     LEFT_WRIST_Y  = 15 * 3 + 1
     RIGHT_WRIST_Y = 16 * 3 + 1
@@ -81,23 +82,20 @@ def adaptive_trim(seg, motion_threshold=0.01, min_keep=10, max_drop=25, window=3
     rw = seg[:, RIGHT_WRIST_Y]
     motion = (np.abs(np.diff(lw)) + np.abs(np.diff(rw))) / 2  # (T-1,)
 
-    def find_sustained_start(motion, threshold, window, max_drop):
-        """Tìm frame đầu tiên của chuỗi motion >= window frames vượt threshold."""
-        for i in range(min(max_drop, len(motion) - window)):
-            if all(motion[i+j] > threshold for j in range(window)):
-                return i
-        return 0  # fallback: không tìm thấy → không trim
+    # Tìm START: frame đầu tiên của chuỗi sustained motion
+    start = 0
+    for i in range(min(max_drop, len(motion) - window)):
+        if all(motion[i+j] > motion_threshold for j in range(window)):
+            start = i
+            break
 
-    def find_sustained_end(motion, threshold, window, max_drop):
-        """Tìm frame cuối cùng của chuỗi motion từ cuối."""
-        for i in range(min(max_drop, len(motion) - window)):
-            idx = len(motion) - 1 - i
-            if all(motion[idx-j] > threshold for j in range(window)):
-                return idx + 2  # +2: motion[idx] = diff frame idx→idx+1
-        return len(seg)  # fallback
-
-    start = find_sustained_start(motion, motion_threshold, window, max_drop)
-    end   = find_sustained_end(motion, motion_threshold, window, max_drop)
+    # Tìm END: scan TOÀN BỘ từ cuối — không giới hạn max_drop
+    end = len(seg)
+    for i in range(len(motion) - window):
+        idx = len(motion) - 1 - i
+        if all(motion[idx-j] > motion_threshold for j in range(window)):
+            end = idx + 2  # +2: motion[idx] = diff frame idx→idx+1
+            break
 
     # Đảm bảo giữ lại ít nhất min_keep frames
     if end - start < min_keep:
