@@ -213,6 +213,44 @@ def run_inference(
     for i, t in enumerate(transition_frames_out):
         print(f"  Transition {i+1}: {t.shape} | range [{t.min():.3f}, {t.max():.3f}]")
 
+    # ---------------------------------------------------------------
+    # POST-PROCESS: snap hand landmarks về đúng wrist position
+    # ---------------------------------------------------------------
+    # MediaPipe layout (flat, no visibility):
+    #   Pose:       kp 0-32 → feat 0-98
+    #   Left hand:  kp 0-20 → feat 99-161  (kp0 = wrist)
+    #   Right hand: kp 0-20 → feat 162-224 (kp0 = wrist)
+    #   Face:       kp 0-467 → feat 225-1628
+    POSE_L_WRIST = slice(15*3, 15*3+3)   # feat 45:48
+    POSE_R_WRIST = slice(16*3, 16*3+3)   # feat 48:51
+    LHAND_BASE   = 99                     # left hand landmark 0
+    RHAND_BASE   = 162                    # right hand landmark 0
+    N_HAND_FEAT  = 21 * 3                 # 63 features per hand
+
+    def snap_hands_to_wrist(frames_raw):
+        """
+        Dịch chuyển toàn bộ hand landmarks để hand[0] khớp với pose wrist.
+        frames_raw: (T, 1659) trong space denormalized
+        """
+        out = frames_raw.copy()
+        for t in range(len(out)):
+            # Left hand: shift toàn bộ 63 features
+            pose_lw  = out[t, POSE_L_WRIST]                      # (3,)
+            hand_lw  = out[t, LHAND_BASE:LHAND_BASE+3]           # (3,)
+            shift_l  = pose_lw - hand_lw
+            out[t, LHAND_BASE:LHAND_BASE+N_HAND_FEAT] += np.tile(shift_l, 21)
+
+            # Right hand
+            pose_rw  = out[t, POSE_R_WRIST]
+            hand_rw  = out[t, RHAND_BASE:RHAND_BASE+3]
+            shift_r  = pose_rw - hand_rw
+            out[t, RHAND_BASE:RHAND_BASE+N_HAND_FEAT] += np.tile(shift_r, 21)
+        return out
+
+    # Apply snap to each transition segment
+    transition_frames_out = [snap_hands_to_wrist(t) for t in transition_frames_out]
+    print("  Snapped hand landmarks to pose wrist positions")
+
     # Assemble final sequence using original word frames and generated transitions
     final_sequence_parts = []
     for i, seg_norm in enumerate(original_segments_norm):
