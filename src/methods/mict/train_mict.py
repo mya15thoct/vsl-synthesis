@@ -29,7 +29,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from pathlib import Path
 from tqdm import tqdm
 
@@ -49,11 +49,25 @@ def mict_loss(
     """
     L_joint (Eq. 8, MicT paper): MAE trên TẤT CẢ frames (cả word lẫn transition).
     Target = interpolated_sequence (word frames = real, transitions = linear interp).
+
+    Weighted: hand + pose landmarks có weight cao hơn face (vì loss thường bị face dominate).
+      Feat layout (flat, 3 per kp, no visibility):
+        pose  [0:99]     (33 kp × 3)
+        lhand [99:162]   (21 kp × 3)
+        rhand [162:225]  (21 kp × 3)
+        face  [225:1629] (468 kp × 3)
+        extra [1629:1659]
     """
-    mask_exp = valid_mask.unsqueeze(-1)             # (B, T, 1)
+    # Build per-feature weight vector (1659,)
+    w = torch.ones(pred_x0.shape[-1], device=pred_x0.device, dtype=pred_x0.dtype)
+    w[0:99]    = 3.0   # pose: upweight ×3
+    w[99:225]  = 5.0   # hands: upweight ×5
+    # face (225:1629) stays at 1.0
+
+    mask_exp = valid_mask.unsqueeze(-1)                         # (B, T, 1)
+    weighted_mae = (pred_x0 - target).abs() * w.unsqueeze(0).unsqueeze(0)
     n_valid  = mask_exp.sum().clamp(min=1.0) * pred_x0.shape[-1]
-    mae_loss = (pred_x0 - target).abs() * mask_exp
-    total    = mae_loss.sum() / n_valid
+    total    = (weighted_mae * mask_exp).sum() / n_valid
     return total, total.item()
 
 
@@ -192,12 +206,12 @@ def main():
     # Training
     parser.add_argument('--epochs',      type=int,   default=100)
     parser.add_argument('--batch_size',  type=int,   default=32)
-    parser.add_argument('--lr',          type=float, default=1e-4)
+    parser.add_argument('--lr',          type=float, default=3e-5)
     parser.add_argument('--weight_decay',type=float, default=0.01)
     parser.add_argument('--num_workers', type=int,   default=4)
     parser.add_argument('--max_seq_len', type=int,   default=300,
                         help='Max frame length per sample (dataset truncation)')
-    parser.add_argument('--patience',    type=int,   default=15,
+    parser.add_argument('--patience',    type=int,   default=30,
                         help='Early stopping patience (0 = disabled)')
 
     # Loss & masking
@@ -261,7 +275,7 @@ def main():
         enc_layers   = args.enc_layers,
         dec_layers   = args.dec_layers,
         ff_mult      = 4,
-        dropout      = 0.1,
+        dropout      = 0.05,   # Fix 4: lower dropout (was 0.1)
         max_len      = args.max_len,
         num_timesteps= args.num_timesteps,
     ).to(device)
@@ -274,8 +288,18 @@ def main():
         num_timesteps = args.num_timesteps,
     ).to(device)
 
-    optimizer    = AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    lr_scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=args.lr * 0.01)
+    optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+
+    # Fix 3: Warmup 5 epochs → Cosine decay
+    warmup_epochs  = min(5, args.epochs // 10)
+    warmup_sched   = LinearLR(optimizer, start_factor=0.1, end_factor=1.0,
+                               total_iters=warmup_epochs)
+    cosine_sched   = CosineAnnealingLR(optimizer,
+                                        T_max=max(1, args.epochs - warmup_epochs),
+                                        eta_min=args.lr * 0.01)
+    lr_scheduler   = SequentialLR(optimizer,
+                                   schedulers=[warmup_sched, cosine_sched],
+                                   milestones=[warmup_epochs])
 
     # Resume if requested
     start_epoch = 1
