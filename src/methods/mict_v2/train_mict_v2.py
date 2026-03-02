@@ -54,7 +54,27 @@ def encode_batch(vae, seqs, device):
         return vae.encode(seqs.to(device), deterministic=True)
 
 
-def train_epoch(model, scheduler, vae, dataloader, optimizer, device, mask_prob=0.3):
+def to_velocity(latent):
+    """
+    Convert absolute latent sequence → velocity sequence.
+    v[0] = z[0] (first frame velocity = itself, anchored from 0)
+    v[t] = z[t] - z[t-1]  for t > 0
+    Shape: (B, T, D) → (B, T, D)
+    """
+    prev   = torch.cat([torch.zeros_like(latent[:, :1, :]), latent[:, :-1, :]], dim=1)
+    return latent - prev
+
+
+def from_velocity(velocity):
+    """
+    Integrate velocity → absolute latent: z[t] = cumsum(v[0..t])
+    Shape: (B, T, D) → (B, T, D)
+    """
+    return torch.cumsum(velocity, dim=1)
+
+
+def train_epoch(model, scheduler, vae, dataloader, optimizer, device, mask_prob=0.3,
+                use_velocity=False):
     model.train()
     total_loss = 0.0
     pbar = tqdm(dataloader, desc="  [train]", leave=False)
@@ -72,18 +92,26 @@ def train_epoch(model, scheduler, vae, dataloader, optimizer, device, mask_prob=
         latent_masked = encode_batch(vae, masked_seqs, device)  # (B, T, D_lat)
         latent_gt     = encode_batch(vae, interp_seqs, device)  # (B, T, D_lat)
 
+        # Convert to velocity if enabled
+        if use_velocity:
+            target    = to_velocity(latent_gt)
+            obs_input = to_velocity(latent_masked)
+        else:
+            target    = latent_gt
+            obs_input = latent_masked
+
         # Additional random masking on word frames (paper: 30%)
-        word_mask = (1.0 - trans_masks)
-        extra = (torch.rand(B, T, device=device) < mask_prob).float() * word_mask
-        obs_latent = latent_masked * (1.0 - extra.unsqueeze(-1))
+        word_mask  = (1.0 - trans_masks)
+        extra      = (torch.rand(B, T, device=device) < mask_prob).float() * word_mask
+        obs_input  = obs_input * (1.0 - extra.unsqueeze(-1))
 
         # Diffusion
         t = torch.randint(0, scheduler.num_timesteps, (B,), device=device).long()
-        x_t, _ = scheduler.add_noise(latent_gt, t)
+        x_t, _ = scheduler.add_noise(target, t)
 
-        pred_z0, _ = model(x_t, t, obs_latent, pad_key_mask)
+        pred_z0, _ = model(x_t, t, obs_input, pad_key_mask)
 
-        loss, mae_v = latent_loss(pred_z0, latent_gt, valid_mask)
+        loss, mae_v = latent_loss(pred_z0, target, valid_mask)
 
         optimizer.zero_grad()
         loss.backward()
@@ -97,7 +125,7 @@ def train_epoch(model, scheduler, vae, dataloader, optimizer, device, mask_prob=
 
 
 @torch.no_grad()
-def validate(model, scheduler, vae, dataloader, device, mask_prob=0.3):
+def validate(model, scheduler, vae, dataloader, device, mask_prob=0.3, use_velocity=False):
     model.eval()
     total_loss = 0.0
 
@@ -113,15 +141,22 @@ def validate(model, scheduler, vae, dataloader, device, mask_prob=0.3):
         latent_masked = encode_batch(vae, masked_seqs, device)
         latent_gt     = encode_batch(vae, interp_seqs, device)
 
-        word_mask = (1.0 - trans_masks)
-        extra = (torch.rand(B, T, device=device) < mask_prob).float() * word_mask
-        obs_latent = latent_masked * (1.0 - extra.unsqueeze(-1))
+        if use_velocity:
+            target    = to_velocity(latent_gt)
+            obs_input = to_velocity(latent_masked)
+        else:
+            target    = latent_gt
+            obs_input = latent_masked
+
+        word_mask  = (1.0 - trans_masks)
+        extra      = (torch.rand(B, T, device=device) < mask_prob).float() * word_mask
+        obs_input  = obs_input * (1.0 - extra.unsqueeze(-1))
 
         t = torch.randint(0, scheduler.num_timesteps, (B,), device=device).long()
-        x_t, _ = scheduler.add_noise(latent_gt, t)
+        x_t, _ = scheduler.add_noise(target, t)
 
-        pred_z0, _ = model(x_t, t, obs_latent, pad_key_mask)
-        loss, _    = latent_loss(pred_z0, latent_gt, valid_mask)
+        pred_z0, _ = model(x_t, t, obs_input, pad_key_mask)
+        loss, _    = latent_loss(pred_z0, target, valid_mask)
         total_loss += loss.item()
 
     return total_loss / len(dataloader)
@@ -149,13 +184,15 @@ def main():
     parser.add_argument('--patience',    type=int,   default=30)
     parser.add_argument('--mask_prob',   type=float, default=0.3)
     parser.add_argument('--num_timesteps', type=int, default=1000)
+    parser.add_argument('--use_velocity', action='store_true',
+                        help='Diffuse trên velocity latent thay vì absolute latent')
     args = parser.parse_args()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"\nMicT V2 Stage 2 — Latent Diffusion ({args.latent_dim}D)")
+    print(f"\nMicT V2 Stage 2 — {'Velocity+' if args.use_velocity else ''}Latent Diffusion ({ae_cfg['latent_dim']}D)")
     print(f"  Device:    {device}")
     print(f"  AE:        {args.ae_path}")
 
@@ -214,8 +251,9 @@ def main():
 
     for epoch in range(1, args.epochs + 1):
         train_loss = train_epoch(model, scheduler, vae, train_loader,
-                                  optimizer, device, args.mask_prob)
-        val_loss   = validate(model, scheduler, vae, val_loader, device, args.mask_prob)
+                                  optimizer, device, args.mask_prob, args.use_velocity)
+        val_loss   = validate(model, scheduler, vae, val_loader, device,
+                               args.mask_prob, args.use_velocity)
         lr_sched.step()
 
         lr = optimizer.param_groups[0]['lr']
@@ -228,6 +266,7 @@ def main():
         torch.save({
             'epoch': epoch, 'model_state_dict': model.state_dict(),
             'val_loss': val_loss, 'config': model.config, 'ae_config': ae_cfg,
+            'use_velocity': args.use_velocity,
         }, output_dir / 'latest.pt')
 
         if val_loss < best_val:
@@ -236,6 +275,7 @@ def main():
             torch.save({
                 'epoch': epoch, 'model_state_dict': model.state_dict(),
                 'val_loss': best_val, 'config': model.config, 'ae_config': ae_cfg,
+                'use_velocity': args.use_velocity,
             }, output_dir / 'best.pt')
             print(f"  ✓ Best saved (val={best_val:.4f})")
         else:

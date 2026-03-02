@@ -113,8 +113,9 @@ def run_inference(ae_path, model_path, word_npys,
     print(f"Loaded VAE: latent_dim={ae_cfg['latent_dim']}, epoch={ae_ckpt['epoch']}")
 
     # Load diffusion model
-    ckpt = torch.load(model_path, map_location=device)
-    cfg  = ckpt.get('config', {})
+    ckpt         = torch.load(model_path, map_location=device)
+    cfg          = ckpt.get('config', {})
+    use_velocity = ckpt.get('use_velocity', False)
     model = MicTDiffusionModel(
         input_dim    = ae_cfg['latent_dim'],
         hidden_dim   = cfg.get('hidden_dim',    512),
@@ -125,7 +126,8 @@ def run_inference(ae_path, model_path, word_npys,
     ).to(device)
     model.load_state_dict(ckpt['model_state_dict'])
     model.eval()
-    print(f"Loaded diffusion model: epoch={ckpt.get('epoch','?')}, val={ckpt.get('val_loss','?'):.4f}")
+    mode_str = 'velocity+latent' if use_velocity else 'latent'
+    print(f"Loaded {mode_str} diffusion model: epoch={ckpt.get('epoch','?')}, val={ckpt.get('val_loss','?'):.4f}")
 
     # Build inputs
     masked_latent, word_lengths, orig_latents, orig_segs_norm = build_masked_latent_seq(
@@ -138,25 +140,42 @@ def run_inference(ae_path, model_path, word_npys,
     print(f"  Transition frames: {transition_frames} per gap")
     print(f"  Total latent seq: {masked_latent.shape[0]} frames × {masked_latent.shape[1]}D")
 
-    # DDPM sampling in latent space
-    scheduler = MicTDDPMScheduler(num_timesteps=cfg.get('num_timesteps', 1000)).to(device)
-    masked_tensor = torch.tensor(masked_latent, dtype=torch.float32, device=device).unsqueeze(0)
+    # Convert masked latent to velocity if needed
+    masked_np = masked_latent
+    if use_velocity:
+        ml_t = torch.tensor(masked_np, dtype=torch.float32, device=device).unsqueeze(0)
+        prev  = torch.cat([torch.zeros_like(ml_t[:, :1, :]), ml_t[:, :-1, :]], dim=1)
+        masked_np = (ml_t - prev).squeeze(0).cpu().numpy()
 
-    print(f"\nRunning DDPM latent sampling ({num_inference_steps} steps)...")
+    # DDPM sampling
+    scheduler = MicTDDPMScheduler(num_timesteps=cfg.get('num_timesteps', 1000)).to(device)
+    masked_tensor = torch.tensor(masked_np, dtype=torch.float32, device=device).unsqueeze(0)
+
+    print(f"\nRunning DDPM {mode_str} sampling ({num_inference_steps} steps)...")
     with torch.no_grad():
-        generated_latent = scheduler.sample(
+        generated = scheduler.sample(
             model, masked_tensor, num_inference_steps=num_inference_steps,
         )  # (1, T_total, latent_dim)
-    generated_latent = generated_latent[0].cpu().numpy()  # (T_total, latent_dim)
+    generated = generated[0].cpu().numpy()  # (T_total, latent_dim)
 
-    # Extract transition latents
+    # Extract transition latents and integrate velocity if needed
     transition_latents = []
     pos = 0
     for i, wlen in enumerate(word_lengths):
         pos += wlen
         if i < len(word_lengths) - 1:
-            trans_z = generated_latent[pos:pos + transition_frames]
-            transition_latents.append(trans_z)
+            trans = generated[pos:pos + transition_frames]   # (tf, D)
+
+            if use_velocity:
+                # Integrate velocity anchored at last latent of word i
+                anchor = orig_latents[i][-1]   # (D,) last latent of word i
+                trans_z = np.zeros_like(trans)
+                trans_z[0] = anchor + trans[0]
+                for t in range(1, len(trans)):
+                    trans_z[t] = trans_z[t-1] + trans[t]
+                trans = trans_z
+
+            transition_latents.append(trans)
             pos += transition_frames
 
     print(f"\nGenerated {len(transition_latents)} transition segment(s)")
@@ -165,8 +184,8 @@ def run_inference(ae_path, model_path, word_npys,
     transition_poses = []
     with torch.no_grad():
         for trans_z in transition_latents:
-            z_t = torch.tensor(trans_z, dtype=torch.float32, device=device).unsqueeze(0)  # (1,T,D)
-            pose_norm = vae.decode(z_t).squeeze(0).cpu().numpy()                            # (T,1659)
+            z_t = torch.tensor(trans_z, dtype=torch.float32, device=device).unsqueeze(0)
+            pose_norm = vae.decode(z_t).squeeze(0).cpu().numpy()
             pose_raw  = denormalize(np.clip(pose_norm, 0.0, 1.0))
             transition_poses.append(pose_raw)
 
@@ -183,6 +202,7 @@ def run_inference(ae_path, model_path, word_npys,
 
     final = np.concatenate([np.asarray(p, dtype=np.float32) for p in final_parts], axis=0)
     return final, transition_poses
+
 
 
 def snap_hands_to_wrist(frames_raw):
