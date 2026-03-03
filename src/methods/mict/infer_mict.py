@@ -267,10 +267,9 @@ def main():
                         help='Bỏ N frame đầu mỗi word (default: 3)')
     parser.add_argument('--no_canonical', action='store_true',
                         help='Tắt canonical normalization')
-    parser.add_argument('--no_adaptive', action='store_true',
-                        help='Tắt adaptive trim, dùng fixed drop_first/last thay thế')
-    parser.add_argument('--motion_threshold', type=float, default=0.005,
-                        help='Ngưỡng motion để phát hiện rest pose (default: 0.005)')
+    parser.add_argument('--hip_margin', type=float, default=0.05,
+                        help='Wrist phải cao hơn hông bao nhiêu để xem là active (default: 0.05)')
+
     args = parser.parse_args()
 
     random.seed(args.seed)
@@ -303,12 +302,10 @@ def main():
         word_npys=word_npys,
         transition_frames=args.transition_frames,
         num_inference_steps=args.inference_steps,
-        drop_last_frames=args.drop_last_frames,
-        drop_first_frames=args.drop_first_frames,
         canonical_norm=not args.no_canonical,
-        adaptive=not args.no_adaptive,
-        motion_threshold=args.motion_threshold,
+        hip_margin=args.hip_margin,
     )
+
 
     np.save(args.output_npy, generated)
     print(f"\nSaved full generated sequence → {args.output_npy}")
