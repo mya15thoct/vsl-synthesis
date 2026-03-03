@@ -320,7 +320,7 @@ def prepare_mict_dataset(
         try:
             s = build_sentence_sample(
                 recipe['paths'], transition_frames,
-                motion_threshold, 8, canonical_norm
+                hip_margin, 8, canonical_norm
             )
             if s is None:
                 continue
