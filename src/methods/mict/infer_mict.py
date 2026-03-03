@@ -70,34 +70,30 @@ def canonical_normalize_skeleton(data_flat):
     return result
 
 
-def adaptive_trim(seg, motion_threshold=0.003, min_keep=10, max_drop=25, window=3):
+def adaptive_trim(seg, hip_margin=0.05, min_keep=10, window=5):
     """
-    Tự động trim frames đầu/cuối có motion thấp (rest pose).
-    - Đầu: scan tối đa max_drop frames từ đầu
-    - Cuối: scan TOÀN BỘ từ cuối (không giới hạn) để tìm frame active cuối cùng
+    Trim rest frames bằng vị trí tay (giống prepare_data_mict.py).
+    Frame active = ít nhất 1 wrist cao hơn hông hip_margin.
     """
-    LEFT_WRIST_Y  = 15 * 3 + 1
-    RIGHT_WRIST_Y = 16 * 3 + 1
-    lw = seg[:, LEFT_WRIST_Y]
-    rw = seg[:, RIGHT_WRIST_Y]
-    motion = (np.abs(np.diff(lw)) + np.abs(np.diff(rw))) / 2  # (T-1,)
+    LW_Y  = seg[:, 46]                        # left wrist y
+    RW_Y  = seg[:, 49]                        # right wrist y
+    HIP_Y = (seg[:, 70] + seg[:, 73]) / 2    # hip center y
 
-    # Tìm START: frame đầu tiên của chuỗi sustained motion
-    start = 0
-    for i in range(min(max_drop, len(motion) - window)):
-        if all(motion[i+j] > motion_threshold for j in range(window)):
-            start = i
-            break
+    threshold_y = HIP_Y - hip_margin
+    active = (LW_Y < threshold_y) | (RW_Y < threshold_y)
 
-    # Tìm END: scan TOÀN BỘ từ cuối — không giới hạn max_drop
-    end = len(seg)
-    for i in range(len(motion) - window):
-        idx = len(motion) - 1 - i
-        if all(motion[idx-j] > motion_threshold for j in range(window)):
-            end = idx + 2  # +2: motion[idx] = diff frame idx→idx+1
-            break
+    kernel   = np.ones(window) / window
+    smooth   = np.convolve(active.astype(float), kernel, mode='same')
+    active_s = smooth > 0.4
 
-    # Đảm bảo giữ lại ít nhất min_keep frames
+    candidates = np.where(active_s)[0]
+    if len(candidates) == 0:
+        pad = len(seg) // 10
+        return seg[pad: len(seg) - pad] if len(seg) > 2 * pad + min_keep else seg
+
+    start = int(candidates[0])
+    end   = min(int(candidates[-1]) + 2, len(seg))
+
     if end - start < min_keep:
         mid   = (start + end) // 2
         start = max(0, mid - min_keep // 2)
@@ -106,24 +102,16 @@ def adaptive_trim(seg, motion_threshold=0.003, min_keep=10, max_drop=25, window=
     return seg[start:end]
 
 
-def build_masked_seq(word_npys, transition_frames=10, drop_last_frames=8,
-                     drop_first_frames=3, canonical_norm=True,
-                     adaptive=True, motion_threshold=0.003):
+def build_masked_seq(word_npys, transition_frames=10,
+                     canonical_norm=True, hip_margin=0.05):
     """Build masked_sequence (words + zero transitions) for inference."""
     segments = []
     for p in word_npys:
         s = load_npy(p)
         if canonical_norm:
             s = canonical_normalize_skeleton(s)
-        if adaptive:
-            # Adaptive trim trước normalize — motion values vẫn ở scale gốc
-            s = adaptive_trim(s, motion_threshold=motion_threshold)
-        else:
-            if drop_first_frames > 0 and len(s) > drop_first_frames + drop_last_frames + 5:
-                s = s[drop_first_frames:]
-            if drop_last_frames > 0 and len(s) > drop_last_frames + 5:
-                s = s[:-drop_last_frames]
-        s = normalize(s)  # normalize SAU khi đã trim
+        s = adaptive_trim(s, hip_margin=hip_margin)
+        s = normalize(s)
         segments.append(s)
     feat_dim = segments[0].shape[1]
     zeros = np.zeros((transition_frames, feat_dim), dtype=np.float32)
@@ -145,8 +133,7 @@ def run_inference(
     drop_last_frames: int = 8,
     drop_first_frames: int = 3,
     canonical_norm: bool = True,
-    adaptive: bool = True,
-    motion_threshold: float = 0.005,
+    hip_margin: float = 0.05,
 ):
     if device is None:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -171,8 +158,7 @@ def run_inference(
 
     # Build observation condition
     masked_seq, word_lengths, original_segments_norm = build_masked_seq(
-        word_npys, transition_frames, drop_last_frames, drop_first_frames,
-        canonical_norm, adaptive, motion_threshold
+        word_npys, transition_frames, canonical_norm, hip_margin
     )
     print(f"\nInput:")
     print(f"  Words: {len(word_npys)} ({word_lengths} frames each)")
