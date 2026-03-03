@@ -95,43 +95,44 @@ def canonical_normalize_skeleton(data_flat):
     return result
 
 
-def adaptive_trim(seg, peak_frac=0.20, min_keep=10, window=5):
+def adaptive_trim(seg, hip_margin=0.05, min_keep=10, window=5):
     """
-    Trim frames dựa theo motion của upper-body + hands.
+    Trim rest frames bằng vị trí tay — không dùng motion (tránh noise).
 
-    Dùng:
-      - Pose landmarks 11-22 (vai, khuỷu, cổ tay, ngón): feat [33:69]
-      - Left hand landmarks 0-20: feat [99:162]
-      - Right hand landmarks 0-20: feat [162:225]
+    Khi ký: tay PHẢI giơ lên cao hơn hông (quy tắc vật lý).
+    Khi nghỉ: tay ở bên hông, ngang hoặc thấp hơn hông.
 
-    threshold = max(smoothed_motion) * peak_frac (default 20% of peak)
-    → nhạy với mọi loại ký kể cả ký bằng ngón tay (wrist không di chuyển).
+    Sau canonical_normalize_skeleton:
+        - Hip center y ≈ 0.5 (trong image coord, y lớn hơn = thấp hơn)
+        - Wrist lúc nghỉ ≈ y ≥ 0.5
+        - Wrist lúc ký ≈ y < 0.5 - hip_margin
+
+    Pose layout (no visibility, x,y,z per kp):
+        kp 11: L_SHOULDER  → feat [33,34,35]
+        kp 12: R_SHOULDER  → feat [36,37,38]
+        kp 15: L_WRIST     → feat [45,46,47]  ← y = feat 46
+        kp 16: R_WRIST     → feat [48,49,50]  ← y = feat 49
+        kp 23: L_HIP       → feat [69,70,71]  ← y = feat 70
+        kp 24: R_HIP       → feat [72,73,74]  ← y = feat 73
     """
-    # Concat upper-body pose + both hands
-    feats = np.concatenate([
-        seg[:, 33:69],    # pose kp 11-22: shoulders→fingertips (T, 36)
-        seg[:, 99:162],   # left hand kp 0-20 (T, 63)
-        seg[:, 162:225],  # right hand kp 0-20 (T, 63)
-    ], axis=1)  # (T, 162)
+    LW_Y   = seg[:, 46]                        # left wrist y  (T,)
+    RW_Y   = seg[:, 49]                        # right wrist y
+    HIP_Y  = (seg[:, 70] + seg[:, 73]) / 2    # hip center y  (T,)
 
-    # Per-keypoint 3D displacement, averaged
-    diff   = np.diff(feats, axis=0)                                    # (T-1, 162)
-    motion = diff.reshape(len(diff), -1, 3)                            # (T-1, 54, 3)
-    motion = np.sqrt((motion**2).sum(axis=-1)).mean(axis=-1)           # (T-1,)
+    # Active = wrist is above hip (smaller y = higher in image)
+    threshold_y = HIP_Y - hip_margin           # (T,)
+    active = (LW_Y < threshold_y) | (RW_Y < threshold_y)  # (T,) bool
 
-    # Box smoothing
-    kernel = np.ones(window) / window
-    smooth = np.convolve(motion, kernel, mode='same')
+    # Smooth with window to remove isolated glitches
+    kernel      = np.ones(window) / window
+    smooth      = np.convolve(active.astype(float), kernel, mode='same')
+    active_s    = smooth > 0.4   # majority of window must be active
 
-    peak = smooth.max()
-    if peak < 1e-8:
-        return seg
-    threshold = peak * peak_frac
-    active    = smooth > threshold
-
-    candidates = np.where(active)[0]
+    candidates = np.where(active_s)[0]
     if len(candidates) == 0:
-        return seg
+        # Fallback: if position-based fails (bad tracking), keep middle 80%
+        pad = len(seg) // 10
+        return seg[pad: len(seg) - pad] if len(seg) > 2 * pad + min_keep else seg
 
     start = int(candidates[0])
     end   = min(int(candidates[-1]) + 2, len(seg))
@@ -145,8 +146,9 @@ def adaptive_trim(seg, peak_frac=0.20, min_keep=10, window=5):
 
 
 
+
 def build_sentence_sample(word_paths, transition_frames=10,
-                           peak_frac=0.15, min_seg_frames=8,
+                           hip_margin=0.05, min_seg_frames=8,
                            canonical_norm=True):
     """
     Ghép N từ thành 1 sequence câu.
@@ -155,19 +157,17 @@ def build_sentence_sample(word_paths, transition_frames=10,
     masked_sequence:       word frames + zero transitions (T_total, 1659)  — inference obs
     interpolated_sequence: word frames + LINEAR INTERP transitions (T_total, 1659) — training GT
 
-    Adaptive trim: dùng wrist motion để tìm vùng đang ký (không còn fixed drop N frames)
+    Adaptive trim: wrist phải cao hơn hông ít nhất hip_margin (position-based)
     """
     segments = []
     for p in word_paths:
         seg = load_npy(p)
-        # Canonical normalization trước trim/normalize — để scale đồng nhất
         if canonical_norm:
             seg = canonical_normalize_skeleton(seg)
-        # Adaptive trim: dùng wrist motion (trước normalize để giữ scale gốc)
-        seg = adaptive_trim(seg, peak_frac=peak_frac)
+        seg = adaptive_trim(seg, hip_margin=hip_margin)
         seg = normalize_skeleton(seg)
         if len(seg) < min_seg_frames:
-            return None  # bỏ sample nếu từ quá ngắn sau trim
+            return None
         segments.append(seg)
 
     feat_dim = segments[0].shape[1]  # 1659
@@ -228,7 +228,7 @@ def prepare_mict_dataset(
     max_samples: int = 50000,
     train_split: float = 0.9,
     seed: int = 42,
-    peak_frac: float = 0.15,
+    hip_margin: float = 0.05,
     canonical_norm: bool = True,
 ):
     """
@@ -343,7 +343,7 @@ def prepare_mict_dataset(
         try:
             s = build_sentence_sample(
                 recipe['paths'], transition_frames,
-                peak_frac, 8, canonical_norm
+                hip_margin, 8, canonical_norm
             )
             if s is None:
                 continue
@@ -379,8 +379,8 @@ def main():
     parser.add_argument('--max_words', type=int, default=5)
     parser.add_argument('--max_samples', type=int, default=50000)
     parser.add_argument('--train_split', type=float, default=0.9)
-    parser.add_argument('--peak_frac', type=float, default=0.15,
-                        help='Fraction of peak motion làm threshold (default: 0.15 = 15%% of peak)')
+    parser.add_argument('--hip_margin', type=float, default=0.05,
+                        help='Wrist phải cao hơn hông ít nhất margin này (0.05 = 5%% torso height)')
     parser.add_argument('--no_canonical', action='store_true',
                         help='Tắt canonical normalization (scale/position)')
     args = parser.parse_args()
@@ -393,7 +393,7 @@ def main():
         max_words=args.max_words,
         max_samples=args.max_samples,
         train_split=args.train_split,
-        peak_frac=args.peak_frac,
+        hip_margin=args.hip_margin,
         canonical_norm=not args.no_canonical,
     )
 
