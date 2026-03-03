@@ -95,15 +95,15 @@ def canonical_normalize_skeleton(data_flat):
     return result
 
 
-def adaptive_trim(seg, motion_pct=30, min_keep=10, window=3):
+def adaptive_trim(seg, peak_frac=0.15, min_keep=10, window=3):
     """
-    Trim frames dựa theo wrist motion tự động (không cần fixed threshold).
+    Trim frames dựa theo wrist motion tự động.
 
-    threshold = percentile(motion, motion_pct) — tự tính từ data của video đó
-    → mỗi video tự calibrate threshold riêng, không phụ thuộc scale.
+    threshold = max(motion) * peak_frac
+    → chỉ giữ frame có motion >= peak_frac * peak_motion
+    → tự thích nghi với từng video, không phụ thuộc số lượng rest frames
 
-    - Start: tìm frame đầu tiên có motion sustained >= window frames
-    - End:   tìm frame cuối cùng có motion sustained
+    peak_frac=0.15 nghĩa là: bỏ frame dưới 15% của frame active nhất
     """
     LEFT_WRIST_Y  = 15 * 3 + 1   # y of left wrist in pose flat
     RIGHT_WRIST_Y = 16 * 3 + 1   # y of right wrist
@@ -111,25 +111,23 @@ def adaptive_trim(seg, motion_pct=30, min_keep=10, window=3):
     rw = seg[:, RIGHT_WRIST_Y]
     motion = (np.abs(np.diff(lw)) + np.abs(np.diff(rw))) / 2  # (T-1,)
 
-    # Auto threshold: percentile of this video's own motion
-    threshold = np.percentile(motion, motion_pct)
+    # Smooth motion để tránh noise
+    kernel = np.ones(window) / window
+    smooth = np.convolve(motion, kernel, mode='same')
 
-    # START: first frame where motion stays above threshold for `window` frames
-    start = 0
-    for i in range(len(motion) - window):
-        if all(motion[i+j] > threshold for j in range(window)):
-            start = i
-            break
+    # Threshold = fraction of peak motion
+    threshold = smooth.max() * peak_frac
+    active = smooth > threshold  # (T-1,) bool
 
-    # END: last frame where motion stays above threshold (scan from end)
-    end = len(seg)
-    for i in range(len(motion) - window):
-        idx = len(motion) - 1 - i
-        if all(motion[idx-j] > threshold for j in range(window)):
-            end = idx + 2
-            break
+    # START: first True in active
+    start_candidates = np.where(active)[0]
+    start = int(start_candidates[0]) if len(start_candidates) > 0 else 0
 
-    # Safety: keep at least min_keep frames
+    # END: last True in active
+    end = int(start_candidates[-1]) + 2 if len(start_candidates) > 0 else len(seg)
+    end = min(end, len(seg))
+
+    # Safety
     if end - start < min_keep:
         mid   = (start + end) // 2
         start = max(0, mid - min_keep // 2)
@@ -139,7 +137,7 @@ def adaptive_trim(seg, motion_pct=30, min_keep=10, window=3):
 
 
 def build_sentence_sample(word_paths, transition_frames=10,
-                           motion_pct=30, min_seg_frames=8,
+                           peak_frac=0.15, min_seg_frames=8,
                            canonical_norm=True):
     """
     Ghép N từ thành 1 sequence câu.
@@ -157,7 +155,7 @@ def build_sentence_sample(word_paths, transition_frames=10,
         if canonical_norm:
             seg = canonical_normalize_skeleton(seg)
         # Adaptive trim: dùng wrist motion (trước normalize để giữ scale gốc)
-        seg = adaptive_trim(seg, motion_pct=motion_pct)
+        seg = adaptive_trim(seg, peak_frac=peak_frac)
         seg = normalize_skeleton(seg)
         if len(seg) < min_seg_frames:
             return None  # bỏ sample nếu từ quá ngắn sau trim
@@ -221,7 +219,7 @@ def prepare_mict_dataset(
     max_samples: int = 50000,
     train_split: float = 0.9,
     seed: int = 42,
-    motion_pct: float = 30,
+    peak_frac: float = 0.15,
     canonical_norm: bool = True,
 ):
     """
@@ -336,7 +334,7 @@ def prepare_mict_dataset(
         try:
             s = build_sentence_sample(
                 recipe['paths'], transition_frames,
-                motion_pct, 8, canonical_norm
+                peak_frac, 8, canonical_norm
             )
             if s is None:
                 continue
@@ -372,8 +370,8 @@ def main():
     parser.add_argument('--max_words', type=int, default=5)
     parser.add_argument('--max_samples', type=int, default=50000)
     parser.add_argument('--train_split', type=float, default=0.9)
-    parser.add_argument('--motion_pct', type=float, default=30,
-                        help='Percentile của wrist motion làm threshold tự động (default: 30)')
+    parser.add_argument('--peak_frac', type=float, default=0.15,
+                        help='Fraction of peak motion làm threshold (default: 0.15 = 15%% of peak)')
     parser.add_argument('--no_canonical', action='store_true',
                         help='Tắt canonical normalization (scale/position)')
     args = parser.parse_args()
@@ -386,7 +384,7 @@ def main():
         max_words=args.max_words,
         max_samples=args.max_samples,
         train_split=args.train_split,
-        motion_pct=args.motion_pct,
+        peak_frac=args.peak_frac,
         canonical_norm=not args.no_canonical,
     )
 
