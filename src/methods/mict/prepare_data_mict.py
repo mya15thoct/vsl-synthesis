@@ -99,43 +99,42 @@ def adaptive_trim(seg, hip_margin=0.05, min_keep=10, window=5):
     """
     Trim rest frames bằng vị trí tay — không dùng motion (tránh noise).
 
-    Khi ký: tay PHẢI giơ lên cao hơn hông (quy tắc vật lý).
-    Khi nghỉ: tay ở bên hông, ngang hoặc thấp hơn hông.
-
-    Sau canonical_normalize_skeleton:
-        - Hip center y ≈ 0.5 (trong image coord, y lớn hơn = thấp hơn)
-        - Wrist lúc nghỉ ≈ y ≥ 0.5
-        - Wrist lúc ký ≈ y < 0.5 - hip_margin
+    Dùng threshold khác nhau cho đầu/cuối:
+    - START: smooth > 0.4 (phát hiện ngay khi tay bắt đầu hoạt động)
+    - END:   smooth > 0.7 (chỉ giữ frame RÕRÀNG active, loại bỏ giai đoạn
+                           tay đang hạ xuống về rest)
 
     Pose layout (no visibility, x,y,z per kp):
-        kp 11: L_SHOULDER  → feat [33,34,35]
-        kp 12: R_SHOULDER  → feat [36,37,38]
-        kp 15: L_WRIST     → feat [45,46,47]  ← y = feat 46
-        kp 16: R_WRIST     → feat [48,49,50]  ← y = feat 49
-        kp 23: L_HIP       → feat [69,70,71]  ← y = feat 70
-        kp 24: R_HIP       → feat [72,73,74]  ← y = feat 73
+        kp 15: L_WRIST → feat [45,46,47]  ← y = feat 46
+        kp 16: R_WRIST → feat [48,49,50]  ← y = feat 49
+        kp 23: L_HIP   → feat [69,70,71]  ← y = feat 70
+        kp 24: R_HIP   → feat [72,73,74]  ← y = feat 73
     """
-    LW_Y   = seg[:, 46]                        # left wrist y  (T,)
-    RW_Y   = seg[:, 49]                        # right wrist y
-    HIP_Y  = (seg[:, 70] + seg[:, 73]) / 2    # hip center y  (T,)
+    LW_Y  = seg[:, 46]
+    RW_Y  = seg[:, 49]
+    HIP_Y = (seg[:, 70] + seg[:, 73]) / 2
 
-    # Active = wrist is above hip (smaller y = higher in image)
-    threshold_y = HIP_Y - hip_margin           # (T,)
+    threshold_y = HIP_Y - hip_margin
     active = (LW_Y < threshold_y) | (RW_Y < threshold_y)  # (T,) bool
 
-    # Smooth with window to remove isolated glitches
-    kernel      = np.ones(window) / window
-    smooth      = np.convolve(active.astype(float), kernel, mode='same')
-    active_s    = smooth > 0.4   # majority of window must be active
+    kernel = np.ones(window) / window
+    smooth = np.convolve(active.astype(float), kernel, mode='same')
 
-    candidates = np.where(active_s)[0]
-    if len(candidates) == 0:
-        # Fallback: if position-based fails (bad tracking), keep middle 80%
+    # Asymmetric threshold: loose for start, strict for end
+    start_cands = np.where(smooth > 0.4)[0]   # first moment of activity
+    end_cands   = np.where(smooth > 0.7)[0]   # last clearly-active frame
+
+    if len(start_cands) == 0:
+        # Fallback: keep middle 80%
         pad = len(seg) // 10
         return seg[pad: len(seg) - pad] if len(seg) > 2 * pad + min_keep else seg
 
-    start = int(candidates[0])
-    end   = min(int(candidates[-1]) + 2, len(seg))
+    start = int(start_cands[0])
+
+    if len(end_cands) > 0:
+        end = min(int(end_cands[-1]) + 1, len(seg))   # inclusive last strict-active
+    else:
+        end = min(int(start_cands[-1]) + 1, len(seg)) # fallback to loose
 
     if end - start < min_keep:
         mid   = (start + end) // 2
@@ -143,6 +142,7 @@ def adaptive_trim(seg, hip_margin=0.05, min_keep=10, window=5):
         end   = min(len(seg), start + min_keep)
 
     return seg[start:end]
+
 
 
 

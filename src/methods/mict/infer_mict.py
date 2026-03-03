@@ -71,34 +71,26 @@ def canonical_normalize_skeleton(data_flat):
 
 
 def adaptive_trim(seg, hip_margin=0.05, min_keep=10, window=5):
-    """
-    Trim rest frames bằng vị trí tay (giống prepare_data_mict.py).
-    Frame active = ít nhất 1 wrist cao hơn hông hip_margin.
-    """
-    LW_Y  = seg[:, 46]                        # left wrist y
-    RW_Y  = seg[:, 49]                        # right wrist y
-    HIP_Y = (seg[:, 70] + seg[:, 73]) / 2    # hip center y
-
+    """Trim rest frames bằng vị trí tay. START: smooth>0.4, END: smooth>0.7."""
+    LW_Y  = seg[:, 46]
+    RW_Y  = seg[:, 49]
+    HIP_Y = (seg[:, 70] + seg[:, 73]) / 2
     threshold_y = HIP_Y - hip_margin
     active = (LW_Y < threshold_y) | (RW_Y < threshold_y)
-
-    kernel   = np.ones(window) / window
-    smooth   = np.convolve(active.astype(float), kernel, mode='same')
-    active_s = smooth > 0.4
-
-    candidates = np.where(active_s)[0]
-    if len(candidates) == 0:
+    kernel = np.ones(window) / window
+    smooth = np.convolve(active.astype(float), kernel, mode='same')
+    start_cands = np.where(smooth > 0.4)[0]
+    end_cands   = np.where(smooth > 0.7)[0]
+    if len(start_cands) == 0:
         pad = len(seg) // 10
         return seg[pad: len(seg) - pad] if len(seg) > 2 * pad + min_keep else seg
-
-    start = int(candidates[0])
-    end   = min(int(candidates[-1]) + 2, len(seg))
-
+    start = int(start_cands[0])
+    end   = min(int(end_cands[-1]) + 1, len(seg)) if len(end_cands) > 0 \
+            else min(int(start_cands[-1]) + 1, len(seg))
     if end - start < min_keep:
-        mid   = (start + end) // 2
+        mid = (start + end) // 2
         start = max(0, mid - min_keep // 2)
         end   = min(len(seg), start + min_keep)
-
     return seg[start:end]
 
 
