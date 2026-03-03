@@ -95,50 +95,54 @@ def canonical_normalize_skeleton(data_flat):
     return result
 
 
-def adaptive_trim(seg, peak_frac=0.25, min_keep=10, window=5):
+def adaptive_trim(seg, peak_frac=0.20, min_keep=10, window=5):
     """
-    Trim frames dựa theo full 3D wrist motion (x+y+z cả 2 tay).
+    Trim frames dựa theo motion của upper-body + hands.
 
-    threshold = max(smoothed_motion) * peak_frac
-    → bỏ frame có motion < peak_frac * peak (mặc định 25% của đỉnh)
+    Dùng:
+      - Pose landmarks 11-22 (vai, khuỷu, cổ tay, ngón): feat [33:69]
+      - Left hand landmarks 0-20: feat [99:162]
+      - Right hand landmarks 0-20: feat [162:225]
 
-    Dùng full 3D displacement thay vì chỉ Y → nhạy hơn với mọi hướng ký.
+    threshold = max(smoothed_motion) * peak_frac (default 20% of peak)
+    → nhạy với mọi loại ký kể cả ký bằng ngón tay (wrist không di chuyển).
     """
-    # LEFT_WRIST: feat [45,46,47] = pose kp 15 * 3
-    # RIGHT_WRIST: feat [48,49,50] = pose kp 16 * 3
-    LW = seg[:, 45:48]   # (T, 3)
-    RW = seg[:, 48:51]   # (T, 3)
+    # Concat upper-body pose + both hands
+    feats = np.concatenate([
+        seg[:, 33:69],    # pose kp 11-22: shoulders→fingertips (T, 36)
+        seg[:, 99:162],   # left hand kp 0-20 (T, 63)
+        seg[:, 162:225],  # right hand kp 0-20 (T, 63)
+    ], axis=1)  # (T, 162)
 
-    # Full 3D frame-to-frame displacement
-    lw_disp = np.sqrt(((np.diff(LW, axis=0)) ** 2).sum(axis=1))  # (T-1,)
-    rw_disp = np.sqrt(((np.diff(RW, axis=0)) ** 2).sum(axis=1))  # (T-1,)
-    motion  = (lw_disp + rw_disp) / 2                             # (T-1,)
+    # Per-keypoint 3D displacement, averaged
+    diff   = np.diff(feats, axis=0)                                    # (T-1, 162)
+    motion = diff.reshape(len(diff), -1, 3)                            # (T-1, 54, 3)
+    motion = np.sqrt((motion**2).sum(axis=-1)).mean(axis=-1)           # (T-1,)
 
-    # Gaussian-like smoothing
+    # Box smoothing
     kernel = np.ones(window) / window
     smooth = np.convolve(motion, kernel, mode='same')
 
-    # Threshold = fraction of peak
-    peak      = smooth.max()
-    if peak < 1e-8:                  # totally static video → keep all
+    peak = smooth.max()
+    if peak < 1e-8:
         return seg
     threshold = peak * peak_frac
-    active    = smooth > threshold   # (T-1,) bool
+    active    = smooth > threshold
 
     candidates = np.where(active)[0]
     if len(candidates) == 0:
-        return seg                   # can't trim → keep all
+        return seg
 
     start = int(candidates[0])
     end   = min(int(candidates[-1]) + 2, len(seg))
 
-    # Safety: keep at least min_keep frames
     if end - start < min_keep:
         mid   = (start + end) // 2
         start = max(0, mid - min_keep // 2)
         end   = min(len(seg), start + min_keep)
 
     return seg[start:end]
+
 
 
 def build_sentence_sample(word_paths, transition_frames=10,
