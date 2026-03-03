@@ -16,7 +16,7 @@ from src.methods.mict.model_mict import (
     MicTDDPMScheduler,
     SinPosEncoding,
     ObservationEncoder,
-    MicTDenoiser,
+    DenoiserBlock,
 )
 
 __all__ = [
