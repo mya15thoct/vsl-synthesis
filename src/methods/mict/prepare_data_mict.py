@@ -95,32 +95,37 @@ def canonical_normalize_skeleton(data_flat):
     return result
 
 
-def adaptive_trim(seg, motion_threshold=0.003, min_keep=10, max_drop=25, window=3):
+def adaptive_trim(seg, motion_pct=30, min_keep=10, window=3):
     """
-    Trim frames dựa theo wrist motion thực tế (không fixed drop n frames).
-    - Start: scan tối đa max_drop frames tìm chuỗi motion sustained >= window frames
-    - End:   scan TOÀN BỘ từ cuối để tìm frame active cuối cùng
+    Trim frames dựa theo wrist motion tự động (không cần fixed threshold).
 
-    Dùng TRƯỚC normalize để motion values ở scale gốc.
+    threshold = percentile(motion, motion_pct) — tự tính từ data của video đó
+    → mỗi video tự calibrate threshold riêng, không phụ thuộc scale.
+
+    - Start: tìm frame đầu tiên có motion sustained >= window frames
+    - End:   tìm frame cuối cùng có motion sustained
     """
-    LEFT_WRIST_Y  = 15 * 3 + 1   # feat 46 (y of left wrist in pose)
-    RIGHT_WRIST_Y = 16 * 3 + 1   # feat 49
+    LEFT_WRIST_Y  = 15 * 3 + 1   # y of left wrist in pose flat
+    RIGHT_WRIST_Y = 16 * 3 + 1   # y of right wrist
     lw = seg[:, LEFT_WRIST_Y]
     rw = seg[:, RIGHT_WRIST_Y]
     motion = (np.abs(np.diff(lw)) + np.abs(np.diff(rw))) / 2  # (T-1,)
 
-    # START: first frame of sustained motion (>= window frames above threshold)
+    # Auto threshold: percentile of this video's own motion
+    threshold = np.percentile(motion, motion_pct)
+
+    # START: first frame where motion stays above threshold for `window` frames
     start = 0
-    for i in range(min(max_drop, len(motion) - window)):
-        if all(motion[i+j] > motion_threshold for j in range(window)):
+    for i in range(len(motion) - window):
+        if all(motion[i+j] > threshold for j in range(window)):
             start = i
             break
 
-    # END: scan full sequence from end
+    # END: last frame where motion stays above threshold (scan from end)
     end = len(seg)
     for i in range(len(motion) - window):
         idx = len(motion) - 1 - i
-        if all(motion[idx-j] > motion_threshold for j in range(window)):
+        if all(motion[idx-j] > threshold for j in range(window)):
             end = idx + 2
             break
 
@@ -134,7 +139,7 @@ def adaptive_trim(seg, motion_threshold=0.003, min_keep=10, max_drop=25, window=
 
 
 def build_sentence_sample(word_paths, transition_frames=10,
-                           motion_threshold=0.003, min_seg_frames=8,
+                           motion_pct=30, min_seg_frames=8,
                            canonical_norm=True):
     """
     Ghép N từ thành 1 sequence câu.
@@ -152,7 +157,7 @@ def build_sentence_sample(word_paths, transition_frames=10,
         if canonical_norm:
             seg = canonical_normalize_skeleton(seg)
         # Adaptive trim: dùng wrist motion (trước normalize để giữ scale gốc)
-        seg = adaptive_trim(seg, motion_threshold=motion_threshold)
+        seg = adaptive_trim(seg, motion_pct=motion_pct)
         seg = normalize_skeleton(seg)
         if len(seg) < min_seg_frames:
             return None  # bỏ sample nếu từ quá ngắn sau trim
@@ -216,7 +221,7 @@ def prepare_mict_dataset(
     max_samples: int = 50000,
     train_split: float = 0.9,
     seed: int = 42,
-    motion_threshold: float = 0.003,
+    motion_pct: float = 30,
     canonical_norm: bool = True,
 ):
     """
@@ -331,7 +336,7 @@ def prepare_mict_dataset(
         try:
             s = build_sentence_sample(
                 recipe['paths'], transition_frames,
-                motion_threshold, 8, canonical_norm
+                motion_pct, 8, canonical_norm
             )
             if s is None:
                 continue
@@ -367,8 +372,8 @@ def main():
     parser.add_argument('--max_words', type=int, default=5)
     parser.add_argument('--max_samples', type=int, default=50000)
     parser.add_argument('--train_split', type=float, default=0.9)
-    parser.add_argument('--motion_threshold', type=float, default=0.003,
-                        help='Wrist motion threshold cho adaptive trim (default: 0.003)')
+    parser.add_argument('--motion_pct', type=float, default=30,
+                        help='Percentile của wrist motion làm threshold tự động (default: 30)')
     parser.add_argument('--no_canonical', action='store_true',
                         help='Tắt canonical normalization (scale/position)')
     args = parser.parse_args()
@@ -381,7 +386,7 @@ def main():
         max_words=args.max_words,
         max_samples=args.max_samples,
         train_split=args.train_split,
-        motion_threshold=args.motion_threshold,
+        motion_pct=args.motion_pct,
         canonical_norm=not args.no_canonical,
     )
 
