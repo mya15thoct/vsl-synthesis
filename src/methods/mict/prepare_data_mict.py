@@ -95,31 +95,67 @@ def canonical_normalize_skeleton(data_flat):
     return result
 
 
-def build_sentence_sample(word_paths, transition_frames=10, drop_last_frames=8,
-                           drop_first_frames=3, canonical_norm=True):
+def adaptive_trim(seg, motion_threshold=0.003, min_keep=10, max_drop=25, window=3):
+    """
+    Trim frames dựa theo wrist motion thực tế (không fixed drop n frames).
+    - Start: scan tối đa max_drop frames tìm chuỗi motion sustained >= window frames
+    - End:   scan TOÀN BỘ từ cuối để tìm frame active cuối cùng
+
+    Dùng TRƯỚC normalize để motion values ở scale gốc.
+    """
+    LEFT_WRIST_Y  = 15 * 3 + 1   # feat 46 (y of left wrist in pose)
+    RIGHT_WRIST_Y = 16 * 3 + 1   # feat 49
+    lw = seg[:, LEFT_WRIST_Y]
+    rw = seg[:, RIGHT_WRIST_Y]
+    motion = (np.abs(np.diff(lw)) + np.abs(np.diff(rw))) / 2  # (T-1,)
+
+    # START: first frame of sustained motion (>= window frames above threshold)
+    start = 0
+    for i in range(min(max_drop, len(motion) - window)):
+        if all(motion[i+j] > motion_threshold for j in range(window)):
+            start = i
+            break
+
+    # END: scan full sequence from end
+    end = len(seg)
+    for i in range(len(motion) - window):
+        idx = len(motion) - 1 - i
+        if all(motion[idx-j] > motion_threshold for j in range(window)):
+            end = idx + 2
+            break
+
+    # Safety: keep at least min_keep frames
+    if end - start < min_keep:
+        mid   = (start + end) // 2
+        start = max(0, mid - min_keep // 2)
+        end   = min(len(seg), start + min_keep)
+
+    return seg[start:end]
+
+
+def build_sentence_sample(word_paths, transition_frames=10,
+                           motion_threshold=0.003, min_seg_frames=8,
+                           canonical_norm=True):
     """
     Ghép N từ thành 1 sequence câu.
 
-    full_sequence:        word frames only (T_words, 1659)
-    masked_sequence:      word frames + zero transitions (T_total, 1659)  — inference obs
+    full_sequence:         word frames only (T_words, 1659)
+    masked_sequence:       word frames + zero transitions (T_total, 1659)  — inference obs
     interpolated_sequence: word frames + LINEAR INTERP transitions (T_total, 1659) — training GT
 
-    drop_last_frames:  bỏ N frame cuối (rest pose sau khi ký)
-    drop_first_frames: bỏ N frame đầu (rest pose trước khi ký)
-    canonical_norm:    chuẩn hóa scale/position về canonical (loại zoom khác nhau)
+    Adaptive trim: dùng wrist motion để tìm vùng đang ký (không còn fixed drop N frames)
     """
     segments = []
     for p in word_paths:
         seg = load_npy(p)
-        # Canonical normalization trước khi clip/normalize — để scale đồng nhất
+        # Canonical normalization trước trim/normalize — để scale đồng nhất
         if canonical_norm:
             seg = canonical_normalize_skeleton(seg)
+        # Adaptive trim: dùng wrist motion (trước normalize để giữ scale gốc)
+        seg = adaptive_trim(seg, motion_threshold=motion_threshold)
         seg = normalize_skeleton(seg)
-        # Trim đầu và cuối
-        if drop_first_frames > 0 and len(seg) > drop_first_frames + drop_last_frames + 5:
-            seg = seg[drop_first_frames:]
-        if drop_last_frames > 0 and len(seg) > drop_last_frames + 5:
-            seg = seg[:-drop_last_frames]
+        if len(seg) < min_seg_frames:
+            return None  # bỏ sample nếu từ quá ngắn sau trim
         segments.append(seg)
 
     feat_dim = segments[0].shape[1]  # 1659
@@ -180,8 +216,7 @@ def prepare_mict_dataset(
     max_samples: int = 50000,
     train_split: float = 0.9,
     seed: int = 42,
-    drop_last_frames: int = 8,
-    drop_first_frames: int = 3,
+    motion_threshold: float = 0.003,
     canonical_norm: bool = True,
 ):
     """
@@ -273,8 +308,10 @@ def prepare_mict_dataset(
         try:
             s = build_sentence_sample(
                 recipe['paths'], transition_frames,
-                drop_last_frames, drop_first_frames, canonical_norm
+                motion_threshold, 8, canonical_norm
             )
+            if s is None:
+                continue
             s['words'] = recipe['words']
             s['num_words'] = len(recipe['words']) # Ensure num_words is set correctly
             np.savez_compressed(
@@ -294,8 +331,11 @@ def prepare_mict_dataset(
         try:
             s = build_sentence_sample(
                 recipe['paths'], transition_frames,
-                drop_last_frames, drop_first_frames, canonical_norm
+                motion_threshold, 8, canonical_norm
             )
+            if s is None:
+                continue
+
             s['words'] = recipe['words']
             s['num_words'] = len(recipe['words']) # Ensure num_words is set correctly
             np.savez_compressed(
@@ -327,10 +367,8 @@ def main():
     parser.add_argument('--max_words', type=int, default=5)
     parser.add_argument('--max_samples', type=int, default=50000)
     parser.add_argument('--train_split', type=float, default=0.9)
-    parser.add_argument('--drop_last_frames', type=int, default=8,
-                        help='Bỏ N frame cuối mỗi segment để loại rest pose sót (default: 8)')
-    parser.add_argument('--drop_first_frames', type=int, default=3,
-                        help='Bỏ N frame đầu mỗi segment để loại rest pose trước ký (default: 3)')
+    parser.add_argument('--motion_threshold', type=float, default=0.003,
+                        help='Wrist motion threshold cho adaptive trim (default: 0.003)')
     parser.add_argument('--no_canonical', action='store_true',
                         help='Tắt canonical normalization (scale/position)')
     args = parser.parse_args()
@@ -343,10 +381,10 @@ def main():
         max_words=args.max_words,
         max_samples=args.max_samples,
         train_split=args.train_split,
-        drop_last_frames=args.drop_last_frames,
-        drop_first_frames=args.drop_first_frames,
+        motion_threshold=args.motion_threshold,
         canonical_norm=not args.no_canonical,
     )
+
 
 
 if __name__ == '__main__':
