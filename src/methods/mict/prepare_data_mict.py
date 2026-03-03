@@ -95,39 +95,44 @@ def canonical_normalize_skeleton(data_flat):
     return result
 
 
-def adaptive_trim(seg, peak_frac=0.15, min_keep=10, window=3):
+def adaptive_trim(seg, peak_frac=0.25, min_keep=10, window=5):
     """
-    Trim frames dựa theo wrist motion tự động.
+    Trim frames dựa theo full 3D wrist motion (x+y+z cả 2 tay).
 
-    threshold = max(motion) * peak_frac
-    → chỉ giữ frame có motion >= peak_frac * peak_motion
-    → tự thích nghi với từng video, không phụ thuộc số lượng rest frames
+    threshold = max(smoothed_motion) * peak_frac
+    → bỏ frame có motion < peak_frac * peak (mặc định 25% của đỉnh)
 
-    peak_frac=0.15 nghĩa là: bỏ frame dưới 15% của frame active nhất
+    Dùng full 3D displacement thay vì chỉ Y → nhạy hơn với mọi hướng ký.
     """
-    LEFT_WRIST_Y  = 15 * 3 + 1   # y of left wrist in pose flat
-    RIGHT_WRIST_Y = 16 * 3 + 1   # y of right wrist
-    lw = seg[:, LEFT_WRIST_Y]
-    rw = seg[:, RIGHT_WRIST_Y]
-    motion = (np.abs(np.diff(lw)) + np.abs(np.diff(rw))) / 2  # (T-1,)
+    # LEFT_WRIST: feat [45,46,47] = pose kp 15 * 3
+    # RIGHT_WRIST: feat [48,49,50] = pose kp 16 * 3
+    LW = seg[:, 45:48]   # (T, 3)
+    RW = seg[:, 48:51]   # (T, 3)
 
-    # Smooth motion để tránh noise
+    # Full 3D frame-to-frame displacement
+    lw_disp = np.sqrt(((np.diff(LW, axis=0)) ** 2).sum(axis=1))  # (T-1,)
+    rw_disp = np.sqrt(((np.diff(RW, axis=0)) ** 2).sum(axis=1))  # (T-1,)
+    motion  = (lw_disp + rw_disp) / 2                             # (T-1,)
+
+    # Gaussian-like smoothing
     kernel = np.ones(window) / window
     smooth = np.convolve(motion, kernel, mode='same')
 
-    # Threshold = fraction of peak motion
-    threshold = smooth.max() * peak_frac
-    active = smooth > threshold  # (T-1,) bool
+    # Threshold = fraction of peak
+    peak      = smooth.max()
+    if peak < 1e-8:                  # totally static video → keep all
+        return seg
+    threshold = peak * peak_frac
+    active    = smooth > threshold   # (T-1,) bool
 
-    # START: first True in active
-    start_candidates = np.where(active)[0]
-    start = int(start_candidates[0]) if len(start_candidates) > 0 else 0
+    candidates = np.where(active)[0]
+    if len(candidates) == 0:
+        return seg                   # can't trim → keep all
 
-    # END: last True in active
-    end = int(start_candidates[-1]) + 2 if len(start_candidates) > 0 else len(seg)
-    end = min(end, len(seg))
+    start = int(candidates[0])
+    end   = min(int(candidates[-1]) + 2, len(seg))
 
-    # Safety
+    # Safety: keep at least min_keep frames
     if end - start < min_keep:
         mid   = (start + end) // 2
         start = max(0, mid - min_keep // 2)
