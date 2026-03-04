@@ -1,146 +1,58 @@
-# VSL Synthesis - Vietnamese Sign Language Video Synthesis
+# Sign Language Synthesis
 
-## Overview
+## Goal
 
-This project synthesizes smooth, continuous Vietnamese Sign Language (VSL) videos from individual word videos using diffusion models.
+Build a system to synthesize **continuous, natural-looking sign language video** from text input.
 
-**Goal:** Take multiple individual sign language word videos and create a single, natural-looking sentence video with smooth transitions.
-
-**Example:**
-```
-Input: 
-- Video 1: "hello"
-- Video 2: "my"
-- Video 3: "name"
-- Video 4: "is"
-- Video 5: "Ram"
-
-Output: 
-- Single video of person signing "Hello my name is Ram" continuously
-```
+**Core problem:** Full sentence-level sign language video datasets are extremely scarce. Instead, only isolated word-level videos exist. The goal is to combine these words into complete, smooth sentences as if signed by a real person.
 
 ---
 
-## Project Structure
+## Pipeline Overview
 
 ```
-vsl-synthesis/
-├── src/
-│   ├── synthesis/          # Main synthesis modules
-│   │   ├── concatenation.py    # Sequence concatenation
-│   │   ├── interpolation.py    # Spline/Linear interpolation
-│   │   ├── render.py           # Video rendering
-│   │   ├── pipeline.py         # Main synthesis pipeline
-│   │   ├── mdm_adapter.py      # MDM integration
-│   │   └── evaluation.py       # Metrics and evaluation
-│   └── utils/              # Utility functions
-├── models/
-│   └── mdm/                # MDM pretrained model
-├── data/
-│   ├── words/              # Individual word videos/skeletons
-│   └── sentences/          # Full sentence videos (for training)
-├── outputs/
-│   ├── baseline/           # Spline interpolation results
-│   └── diffusion/          # Diffusion model results
-├── tests/                  # Unit and integration tests
-├── requirements.txt
-└── README.md
+Input: "Hello my name is Ram"   ← text
+              |
+    [Layer 1: NLP / Grammar]
+    - Convert to sign language gloss order
+    - Sign language has different grammar from spoken language
+    - e.g. "I don't like it" → ASL gloss: "I LIKE NOT"
+              |
+    [Layer 2: Synthesis]
+    - Lookup skeleton (.npy) for each gloss token
+    - Trim rest frames from start/end of each word
+    - Generate transition frames between consecutive words
+    - Render skeleton sequence -> video
+              |
+Output: Complete, smooth signed sentence video
 ```
 
 ---
 
-## 🚀 Quick Start
+## Why Transitions Matter
 
-### 1. Installation
+In real signing, hands **never stop** between words — they move directly from the end pose of one sign into the start pose of the next (coarticulation). Since isolated word videos have "rest poses" at their boundaries, two things are required:
 
-```bash
-cd vsl-synthesis
-pip install -r requirements.txt
-```
-
-### 2. Basic Usage (Phase 2 - Baseline)
-
-```python
-from src.synthesis.pipeline import synthesize_sentence
-
-# Synthesize sentence from word videos
-output = synthesize_sentence(
-    word_videos=['data/words/hello.npy', 'data/words/my.npy', 'data/words/name.npy'],
-    method='spline',
-    output_path='outputs/baseline/sentence.mp4'
-)
-```
-
-### 3. Using Diffusion Model (Phase 3)
-
-```python
-output = synthesize_sentence(
-    word_videos=['data/words/hello.npy', 'data/words/my.npy'],
-    method='diffusion',
-    model_path='models/mdm/finetuned.pt',
-    output_path='outputs/diffusion/sentence.mp4'
-)
-```
+1. **Trim rest poses** — remove the idle hand frames at word boundaries
+2. **Generate transitions** — synthesize smooth motion from end of word A to start of word B
 
 ---
 
-## 📋 Development Phases
+## Completeness Levels
 
-### Phase 1: Planning (Completed)
-- Research pretrained diffusion models
-- Create implementation plan
-- Setup project structure
+| Level | Requirements |
+|---|---|
+| **Intelligible** — viewer understands the meaning | Word concat + trim + transitions |
+| **Fluent** — looks natural | + Coarticulation modeling |
+| **Native-like** — indistinguishable from a real signer | + Facial expressions (NMMs) + Prosody + Spatial grammar |
 
-### Phase 2: Baseline Implementation (Current)
-- Implement skeleton concatenation
-- Implement spline interpolation
-- Create video rendering pipeline
-- Establish baseline metrics
-
-### Phase 3: Diffusion Model Integration
-- Setup MDM (Motion Diffusion Model)
-- Adapt for VSL skeleton format
-- Fine-tune on VSL data
-- Integrate into pipeline
-
-### Phase 4: Evaluation
-- Calculate metrics (FID, jerk, smoothness)
-- Compare baseline vs diffusion
-- User study
+Current target: **Fluent** — high-quality transition generation.
 
 ---
 
-## Key Components
+## What's Still Missing
 
-### Interpolation Methods
-- **Linear:** Simple linear interpolation between poses
-- **Spline:** Smooth cubic spline interpolation
-- **Bezier:** Bezier curve interpolation
-- **Diffusion:** MDM-based transition generation (Phase 3)
-
-### Evaluation Metrics
-- **FID (Fréchet Inception Distance):** Distribution similarity
-- **Jerk:** Motion smoothness (lower is better)
-- **Foot Skating:** Unnatural foot sliding detection
-- **User Study:** Subjective naturalness rating
-
----
-
-## Expected Results
-
-| Method | FID ↓ | Jerk ↓ | Naturalness ↑ |
-|--------|-------|--------|---------------|
-| Linear | ~45 | ~0.82 | ~3.0/5 |
-| Spline | ~32 | ~0.54 | ~3.5/5 |
-| **Diffusion** | **~18** | **~0.21** | **~4.5/5** |
-
----
-
-## Resources
-
-- **MDM Paper:** [Human Motion Diffusion Model](https://arxiv.org/abs/2209.14916)
-- **MDM GitHub:** [GuyTevet/motion-diffusion-model](https://github.com/GuyTevet/motion-diffusion-model)
-- **Related Project:** [vsl-recognition](../vsl-recognition) (Recognition task)
-
----
-
+- [ ] Layer 1: NLP to convert text → sign language gloss
+- [ ] Non-manual markers: facial expressions (grammar for questions, negation, etc.)
+- [ ] Prosody: rhythm and speed variation based on semantic emphasis
+- [ ] End-to-end evaluation with real users (deaf community)

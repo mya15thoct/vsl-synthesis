@@ -94,6 +94,24 @@ def adaptive_trim(seg, hip_margin=0.05, min_keep=10, window=5):
     return seg[start:end]
 
 
+def snap_hands_to_wrist(frames_raw):
+    """
+    Dịch chuyển toàn bộ hand landmarks để hand[0] khớp với pose wrist.
+    frames_raw: (T, 1659) trong space denormalized
+    """
+    out = np.array(frames_raw, dtype=np.float32)
+    lw_s, lw_e = 15*3, 15*3+3      # pose left wrist feat
+    rw_s, rw_e = 16*3, 16*3+3      # pose right wrist feat
+    lh_s, lh_e = 99,  99+21*3      # left hand all feats
+    rh_s, rh_e = 162, 162+21*3     # right hand all feats
+    for t in range(len(out)):
+        shift_l = out[t, lw_s:lw_e] - out[t, lh_s:lh_s+3]
+        out[t, lh_s:lh_e] = out[t, lh_s:lh_e] + np.tile(shift_l.astype(np.float32), 21)
+        shift_r = out[t, rw_s:rw_e] - out[t, rh_s:rh_s+3]
+        out[t, rh_s:rh_e] = out[t, rh_s:rh_e] + np.tile(shift_r.astype(np.float32), 21)
+    return out
+
+
 def build_masked_seq(word_npys, transition_frames=10,
                      canonical_norm=True, hip_margin=0.05):
     """Build masked_sequence (words + zero transitions) for inference."""
@@ -190,40 +208,6 @@ def run_inference(
     print(f"\nGenerated {len(transition_frames_out)} transition segment(s)")
     for i, t in enumerate(transition_frames_out):
         print(f"  Transition {i+1}: {t.shape} | range [{t.min():.3f}, {t.max():.3f}]")
-
-    # ---------------------------------------------------------------
-    # POST-PROCESS: snap hand landmarks về đúng wrist position
-    # ---------------------------------------------------------------
-    # MediaPipe layout (flat, no visibility):
-    #   Pose:       kp 0-32 → feat 0-98
-    #   Left hand:  kp 0-20 → feat 99-161  (kp0 = wrist)
-    #   Right hand: kp 0-20 → feat 162-224 (kp0 = wrist)
-    #   Face:       kp 0-467 → feat 225-1628
-    POSE_L_WRIST = slice(15*3, 15*3+3)   # feat 45:48
-    POSE_R_WRIST = slice(16*3, 16*3+3)   # feat 48:51
-    LHAND_BASE   = 99                     # left hand landmark 0
-    RHAND_BASE   = 162                    # right hand landmark 0
-    N_HAND_FEAT  = 21 * 3                 # 63 features per hand
-
-    def snap_hands_to_wrist(frames_raw):
-        """
-        Dịch chuyển toàn bộ hand landmarks để hand[0] khớp với pose wrist.
-        frames_raw: (T, 1659) trong space denormalized
-        """
-        out = np.array(frames_raw, dtype=np.float32)
-        lw_s, lw_e = 15*3, 15*3+3      # pose left wrist feat
-        rw_s, rw_e = 16*3, 16*3+3      # pose right wrist feat
-        lh_s, lh_e = 99,  99+21*3      # left hand all feats
-        rh_s, rh_e = 162, 162+21*3     # right hand all feats
-        for t in range(len(out)):
-            # Left hand snap
-            shift_l = out[t, lw_s:lw_e] - out[t, lh_s:lh_s+3]
-            out[t, lh_s:lh_e] = out[t, lh_s:lh_e] + np.tile(shift_l.astype(np.float32), 21)
-            # Right hand snap
-            shift_r = out[t, rw_s:rw_e] - out[t, rh_s:rh_s+3]
-            out[t, rh_s:rh_e] = out[t, rh_s:rh_e] + np.tile(shift_r.astype(np.float32), 21)
-        return out
-
 
     # Apply snap to each transition segment
     transition_frames_out = [snap_hands_to_wrist(t) for t in transition_frames_out]

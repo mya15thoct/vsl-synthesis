@@ -36,7 +36,6 @@ from src.methods.mict.infer_mict import (
     load_npy,
     canonical_normalize_skeleton,
     adaptive_trim,
-    snap_hands_to_wrist as _snap_hands,
 )
 
 GLOBAL_MIN = -2.0
