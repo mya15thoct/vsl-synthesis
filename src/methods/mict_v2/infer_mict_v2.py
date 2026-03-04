@@ -231,6 +231,9 @@ def main():
     parser.add_argument('--transition_frames', type=int, default=10)
     parser.add_argument('--inference_steps', type=int,   default=50)
     parser.add_argument('--output_npy',      default='mict_v2_output.npy')
+    parser.add_argument('--output_mp4',      default=None,
+                        help='Nếu chỉ định, render skeleton video ra file .mp4 luôn')
+    parser.add_argument('--fps',             type=int, default=30)
     parser.add_argument('--seed',            type=int,   default=42)
     parser.add_argument('--hip_margin', type=float, default=0.05,
                         help='Wrist must be above hip by this margin to count as active (default: 0.05)')
@@ -269,6 +272,19 @@ def main():
 
     np.save(args.output_npy, generated)
     print(f"\nSaved → {args.output_npy}  shape: {generated.shape}")
+
+    # Render video nếu --output_mp4 được chỉ định
+    if args.output_mp4:
+        from src.core.render import render_skeleton_video
+        # Flat (T, 1659) → (T, 543, 3): pose(33) + face(468) + lhand(21) + rhand(21)
+        pose  = generated[:, 0:99].reshape(-1, 33, 3)
+        lhand = generated[:, 99:162].reshape(-1, 21, 3)
+        rhand = generated[:, 162:225].reshape(-1, 21, 3)
+        face  = generated[:, 225:1629].reshape(-1, 468, 3)
+        seq   = np.concatenate([pose, face, lhand, rhand], axis=1)  # (T, 543, 3)
+        print(f"\nRendering video ({seq.shape[0]} frames @ {args.fps}fps)...")
+        render_skeleton_video(seq, args.output_mp4, fps=args.fps)
+        print(f"Video → {args.output_mp4}")
 
 
 if __name__ == '__main__':
