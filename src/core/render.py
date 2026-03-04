@@ -145,7 +145,7 @@ def draw_skeleton_554(
     # extra [543:553] not drawn
     
     _draw_landmarks_with_connections(
-        frame, pose_33,
+        frame, pose_kpts,
         mp_holistic.POSE_CONNECTIONS,
         (0, 255, 0),  # Green for pose
         thickness=2
