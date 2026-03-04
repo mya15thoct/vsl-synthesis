@@ -83,7 +83,7 @@ def build_masked_latent_seq(word_npys, vae, device,
     zeros = np.zeros((transition_frames, latent_dim), dtype=np.float32)
     parts = []
     for i, z in enumerate(orig_latents):
-        parts.append(z)
+        parts.append(np.array(z, dtype=np.float32))   # force plain numpy
         if i < len(orig_latents) - 1:
             parts.append(zeros.copy())
     masked_latent = np.concatenate(parts, axis=0)
