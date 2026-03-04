@@ -44,7 +44,7 @@ GLOBAL_MAX =  2.0
 
 def build_masked_latent_seq(word_npys, vae, device,
                               transition_frames=10,
-                              adaptive=True, motion_threshold=0.003,
+                              adaptive=True, hip_margin=0.05,
                               drop_first_frames=8, drop_last_frames=9):
     """
     Load words → canonical norm → trim → normalize → encode → build masked latent seq
@@ -59,7 +59,7 @@ def build_masked_latent_seq(word_npys, vae, device,
         s = load_npy(p)
         s = canonical_normalize_skeleton(s)
         if adaptive:
-            s = adaptive_trim(s, motion_threshold=motion_threshold)
+            s = adaptive_trim(s, hip_margin=hip_margin)
         else:
             if drop_first_frames > 0 and len(s) > drop_first_frames + drop_last_frames + 5:
                 s = s[drop_first_frames:]
@@ -95,7 +95,7 @@ def run_inference(ae_path, model_path, word_npys,
                    transition_frames=10,
                    num_inference_steps=50,
                    device=None,
-                   adaptive=True, motion_threshold=0.003,
+                   adaptive=True, hip_margin=0.05,
                    drop_first_frames=8, drop_last_frames=9):
     if device is None:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -131,7 +131,7 @@ def run_inference(ae_path, model_path, word_npys,
     # Build inputs
     masked_latent, word_lengths, orig_latents, orig_segs_norm = build_masked_latent_seq(
         word_npys, vae, device,
-        transition_frames, adaptive, motion_threshold,
+        transition_frames, adaptive, hip_margin,
         drop_first_frames, drop_last_frames,
     )
     print(f"\nInput:")
@@ -228,7 +228,8 @@ def main():
     parser.add_argument('--inference_steps', type=int,   default=50)
     parser.add_argument('--output_npy',      default='mict_v2_output.npy')
     parser.add_argument('--seed',            type=int,   default=42)
-    parser.add_argument('--motion_threshold', type=float, default=0.003)
+    parser.add_argument('--hip_margin', type=float, default=0.05,
+                        help='Wrist must be above hip by this margin to count as active (default: 0.05)')
     parser.add_argument('--no_adaptive',     action='store_true')
     args = parser.parse_args()
 
@@ -259,7 +260,7 @@ def main():
         transition_frames= args.transition_frames,
         num_inference_steps= args.inference_steps,
         adaptive         = not args.no_adaptive,
-        motion_threshold = args.motion_threshold,
+        hip_margin       = args.hip_margin,
     )
 
     np.save(args.output_npy, generated)
