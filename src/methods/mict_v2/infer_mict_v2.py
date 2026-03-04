@@ -212,10 +212,15 @@ def run_inference(ae_path, model_path, word_npys,
 
 
 def snap_hands_to_wrist(frames_raw):
-    """Snap hand landmark 0 to pose wrist and shift all hand landmarks accordingly."""
+    """Snap hand landmark 0 to pose wrist and shift all hand landmarks accordingly.
+    
+    Real data layout: pose(0:99) + face(99:1533) + lhand(1533:1596) + rhand(1596:1659)
+    """
     out = np.array(frames_raw, dtype=np.float32)
-    lw_s, lw_e = 45, 48;  rw_s, rw_e = 48, 51
-    lh_s, lh_e = 99, 162; rh_s, rh_e = 162, 225
+    lw_s, lw_e = 45, 48      # pose kp15 (L_WRIST) x,y,z
+    rw_s, rw_e = 48, 51      # pose kp16 (R_WRIST) x,y,z
+    lh_s, lh_e = 1533, 1596  # lhand 21kp × 3
+    rh_s, rh_e = 1596, 1659  # rhand 21kp × 3
     for t in range(len(out)):
         shift_l = out[t, lw_s:lw_e] - out[t, lh_s:lh_s+3]
         out[t, lh_s:lh_e] = out[t, lh_s:lh_e] + np.tile(shift_l.astype(np.float32), 21)
@@ -280,14 +285,13 @@ def main():
     if args.output_mp4:
         from src.core.render import render_skeleton_video
         # Flat (T, 1659) → (T, 553, 3)
-        # Layout: pose(99) + lhand(63) + rhand(63) + face(1404) + extra(30)
-        # Render.py expects: [pose(33), face(468), lhand(21), rhand(21), extra(10)] = 553kp
+        # Real layout: pose(0:99) + face(99:1533, 478kp) + lhand(1533:1596) + rhand(1596:1659)
+        # Render expects: [pose(33), face(478), lhand(21), rhand(21)] = 553kp
         pose  = generated[:, 0:99].reshape(-1, 33, 3)
-        lhand = generated[:, 99:162].reshape(-1, 21, 3)
-        rhand = generated[:, 162:225].reshape(-1, 21, 3)
-        face  = generated[:, 225:1629].reshape(-1, 468, 3)
-        extra = generated[:, 1629:1659].reshape(-1, 10, 3)
-        seq   = np.concatenate([pose, face, lhand, rhand, extra], axis=1)  # (T, 553, 3)
+        face  = generated[:, 99:1533].reshape(-1, 478, 3)
+        lhand = generated[:, 1533:1596].reshape(-1, 21, 3)
+        rhand = generated[:, 1596:1659].reshape(-1, 21, 3)
+        seq   = np.concatenate([pose, face, lhand, rhand], axis=1)  # (T, 553, 3)
         print(f"\nRendering video ({seq.shape[0]} frames @ {args.fps}fps)...")
         render_skeleton_video(seq, args.output_mp4, fps=args.fps)
         print(f"Video → {args.output_mp4}")

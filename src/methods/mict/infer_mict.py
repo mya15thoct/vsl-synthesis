@@ -98,12 +98,14 @@ def snap_hands_to_wrist(frames_raw):
     """
     Dịch chuyển toàn bộ hand landmarks để hand[0] khớp với pose wrist.
     frames_raw: (T, 1659) trong space denormalized
+    
+    Real data layout: pose(0:99) + face(99:1533) + lhand(1533:1596) + rhand(1596:1659)
     """
     out = np.array(frames_raw, dtype=np.float32)
-    lw_s, lw_e = 15*3, 15*3+3      # pose left wrist feat
-    rw_s, rw_e = 16*3, 16*3+3      # pose right wrist feat
-    lh_s, lh_e = 99,  99+21*3      # left hand all feats
-    rh_s, rh_e = 162, 162+21*3     # right hand all feats
+    lw_s, lw_e = 45, 48      # pose kp15 (L_WRIST) x,y,z
+    rw_s, rw_e = 48, 51      # pose kp16 (R_WRIST) x,y,z
+    lh_s, lh_e = 1533, 1596  # lhand 21kp × 3
+    rh_s, rh_e = 1596, 1659  # rhand 21kp × 3
     for t in range(len(out)):
         shift_l = out[t, lw_s:lw_e] - out[t, lh_s:lh_s+3]
         out[t, lh_s:lh_e] = out[t, lh_s:lh_e] + np.tile(shift_l.astype(np.float32), 21)

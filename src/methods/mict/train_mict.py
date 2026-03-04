@@ -59,10 +59,11 @@ def mict_loss(
         extra [1629:1659]
     """
     # Build per-feature weight vector (1659,)
+    # Real layout: pose(0:99) + face(99:1533, 478kp×3) + lhand(1533:1596) + rhand(1596:1659)
     w = torch.ones(pred_x0.shape[-1], device=pred_x0.device, dtype=pred_x0.dtype)
-    w[0:99]    = 3.0   # pose: upweight ×3
-    w[99:225]  = 5.0   # hands: upweight ×5
-    # face (225:1629) stays at 1.0
+    w[0:99]      = 3.0   # pose: upweight ×3
+    w[1533:1659] = 5.0   # hands (lhand+rhand): upweight ×5
+    # face (99:1533) stays at 1.0
 
     mask_exp = valid_mask.unsqueeze(-1)                         # (B, T, 1)
     weighted_mae = (pred_x0 - target).abs() * w.unsqueeze(0).unsqueeze(0)

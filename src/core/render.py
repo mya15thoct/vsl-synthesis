@@ -137,12 +137,12 @@ def draw_skeleton_554(
     skeleton_2d = skeleton[:, :2]  # (553, 2)
     
     # Extract landmarks by segment
-    # Layout: pose(33) + face(468) + lhand(21) + rhand(21) + extra(10) = 553
+    # Layout: pose(33) + face(478) + lhand(21) + rhand(21) = 553kp
+    # Matches extract_keypoints.py output: seq = [pose(33), face(478), lhand(21), rhand(21)]
     pose_kpts       = skeleton_2d[0:33]      # 33 pose landmarks
-    face_kpts       = skeleton_2d[33:501]    # 468 face landmarks
-    left_hand_kpts  = skeleton_2d[501:522]   # 21 left hand landmarks
-    right_hand_kpts = skeleton_2d[522:543]   # 21 right hand landmarks
-    # extra [543:553] not drawn
+    face_kpts       = skeleton_2d[33:511]    # 478 face landmarks (refine_face=True → 468+10 iris)
+    left_hand_kpts  = skeleton_2d[511:532]   # 21 left hand landmarks
+    right_hand_kpts = skeleton_2d[532:553]   # 21 right hand landmarks
     
     _draw_landmarks_with_connections(
         frame, pose_kpts,
