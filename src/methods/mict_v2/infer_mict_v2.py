@@ -276,12 +276,15 @@ def main():
     # Render video nếu --output_mp4 được chỉ định
     if args.output_mp4:
         from src.core.render import render_skeleton_video
-        # Flat (T, 1659) → (T, 543, 3): pose(33) + face(468) + lhand(21) + rhand(21)
+        # Flat (T, 1659) → (T, 553, 3)
+        # Layout: pose(99) + lhand(63) + rhand(63) + face(1404) + extra(30)
+        # Render.py expects: [pose(33), face(468), lhand(21), rhand(21), extra(10)] = 553kp
         pose  = generated[:, 0:99].reshape(-1, 33, 3)
         lhand = generated[:, 99:162].reshape(-1, 21, 3)
         rhand = generated[:, 162:225].reshape(-1, 21, 3)
         face  = generated[:, 225:1629].reshape(-1, 468, 3)
-        seq   = np.concatenate([pose, face, lhand, rhand], axis=1)  # (T, 543, 3)
+        extra = generated[:, 1629:1659].reshape(-1, 10, 3)
+        seq   = np.concatenate([pose, face, lhand, rhand, extra], axis=1)  # (T, 553, 3)
         print(f"\nRendering video ({seq.shape[0]} frames @ {args.fps}fps)...")
         render_skeleton_video(seq, args.output_mp4, fps=args.fps)
         print(f"Video → {args.output_mp4}")

@@ -134,17 +134,15 @@ def draw_skeleton_554(
     h, w = frame.shape[:2]
     
     # Extract ONLY x, y coordinates (ignore z)
-    # MediaPipe 3D landmarks have z in range [-1, 1] which causes distortion
     skeleton_2d = skeleton[:, :2]  # (553, 2)
     
-    # Extract landmarks
-    pose_kpts = skeleton_2d[:33]
-    face_kpts = skeleton_2d[33:511]
-    left_hand_kpts = skeleton_2d[511:532]
-    right_hand_kpts = skeleton_2d[532:553]
-    
-    # Draw pose with connections
-    pose_33 = skeleton_2d[:33]
+    # Extract landmarks by segment
+    # Layout: pose(33) + face(468) + lhand(21) + rhand(21) + extra(10) = 553
+    pose_kpts       = skeleton_2d[0:33]      # 33 pose landmarks
+    face_kpts       = skeleton_2d[33:501]    # 468 face landmarks
+    left_hand_kpts  = skeleton_2d[501:522]   # 21 left hand landmarks
+    right_hand_kpts = skeleton_2d[522:543]   # 21 right hand landmarks
+    # extra [543:553] not drawn
     
     _draw_landmarks_with_connections(
         frame, pose_33,
