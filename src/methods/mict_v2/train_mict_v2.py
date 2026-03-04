@@ -264,6 +264,8 @@ def main():
     parser.add_argument('--output_dir',  default='models/mict_v2')
     parser.add_argument('--num_workers', type=int,   default=4)
     parser.add_argument('--max_seq_len', type=int,   default=300)
+    parser.add_argument('--ae_path',     type=str,   default=None,
+                        help='Path to existing VAE checkpoint — skip Stage 1 if provided')
 
     # Stage 1: Pose VAE
     parser.add_argument('--latent_dim',  type=int,   default=128)
@@ -321,8 +323,16 @@ def main():
                                   num_workers=args.num_workers, collate_fn=collate_fn_mict,
                                   pin_memory=True)
 
-    # Stage 1
-    vae, ae_ckpt = train_stage1(args, ae_loader, ae_val_loader, device)
+    # Stage 1: train or load existing VAE
+    if args.ae_path:
+        print(f"\n⏩ Skipping Stage 1 — loading existing VAE from {args.ae_path}")
+        ae_ckpt_path = Path(args.ae_path)
+        ckpt = torch.load(ae_ckpt_path, map_location=device)
+        vae  = PoseVAE(**ckpt['config']).to(device)
+        vae.load_state_dict(ckpt['model_state_dict'])
+        ae_ckpt = ae_ckpt_path
+    else:
+        vae, ae_ckpt = train_stage1(args, ae_loader, ae_val_loader, device)
 
     # Freeze VAE for Stage 2
     vae.eval()
