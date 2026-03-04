@@ -155,7 +155,10 @@ def run_inference(ae_path, model_path, word_npys,
         generated = scheduler.sample(
             model, masked_tensor, num_inference_steps=num_inference_steps,
         )  # (1, T_total, latent_dim)
-    generated = generated[0].cpu().numpy()  # (T_total, latent_dim)
+    generated = np.array(generated[0].cpu().numpy(), dtype=np.float32)  # (T_total, latent_dim)
+
+    # Also ensure orig_latents are plain numpy
+    orig_latents = [np.array(z, dtype=np.float32) for z in orig_latents]
 
     # Extract transition latents and integrate velocity if needed
     transition_latents = []
@@ -167,7 +170,8 @@ def run_inference(ae_path, model_path, word_npys,
 
             if use_velocity:
                 # Integrate velocity anchored at last latent of word i
-                anchor = orig_latents[i][-1]   # (D,) last latent of word i
+                anchor = np.array(orig_latents[i][-1], dtype=np.float32)   # (D,)
+                trans  = np.array(trans, dtype=np.float32)
                 trans_z = np.zeros_like(trans)
                 trans_z[0] = anchor + trans[0]
                 for t in range(1, len(trans)):
