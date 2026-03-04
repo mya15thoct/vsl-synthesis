@@ -197,9 +197,12 @@ def run_inference(ae_path, model_path, word_npys,
     print("  Snapped hand landmarks to pose wrist positions")
 
     # Assemble: original word frames + decoded transition frames
+    # Apply snap to word frames too (not just transitions)
     final_parts = []
     for i, seg_norm in enumerate(orig_segs_norm):
-        final_parts.append(denormalize(seg_norm))
+        word_raw = denormalize(seg_norm)
+        word_raw = snap_hands_to_wrist(word_raw)   # snap word frames too
+        final_parts.append(word_raw)
         if i < len(orig_segs_norm) - 1:
             final_parts.append(transition_poses[i])
 
