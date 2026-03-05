@@ -155,6 +155,7 @@ def run_inference(ae_path, model_path, word_npys,
 
     # DDPM sampling
     scheduler = MicTDDPMScheduler(num_timesteps=cfg.get('num_timesteps', 1000)).to(device)
+    masked_np = np.array(masked_np, dtype=np.float32)   # ensure plain float32
     masked_tensor = torch.tensor(masked_np, dtype=torch.float32, device=device).unsqueeze(0)
 
     print(f"\nRunning DDPM {mode_str} sampling ({num_inference_steps} steps)...")
