@@ -30,16 +30,52 @@ from pathlib import Path
 
 from src.methods.mict_v2.autoencoder import PoseVAE
 from src.methods.mict_v2.model_mict_v2 import MicTDiffusionModel, MicTDDPMScheduler
-# Reuse preprocessing utilities from mict/
-from src.methods.mict.infer_mict import (
-    normalize, denormalize,
-    load_npy,
-    canonical_normalize_skeleton,
-    adaptive_trim,
-)
-
 GLOBAL_MIN = -2.0
 GLOBAL_MAX =  2.0
+
+
+def normalize(x):
+    return (np.clip(x, GLOBAL_MIN, GLOBAL_MAX) - GLOBAL_MIN) / (GLOBAL_MAX - GLOBAL_MIN)
+
+
+def denormalize(x):
+    return x * (GLOBAL_MAX - GLOBAL_MIN) + GLOBAL_MIN
+
+
+def load_npy(path):
+    data = np.load(str(path)).astype(np.float32)
+    if data.ndim == 3:
+        data = data.reshape(data.shape[0], -1)
+    return data
+
+
+_IDX_L_HIP = 69; _IDX_R_HIP = 72; _IDX_L_SHO = 33; _IDX_R_SHO = 36
+
+def canonical_normalize_skeleton(d):
+    hip  = (d[:, _IDX_L_HIP:_IDX_L_HIP+2] + d[:, _IDX_R_HIP:_IDX_R_HIP+2]) / 2
+    sho  = (d[:, _IDX_L_SHO:_IDX_L_SHO+2] + d[:, _IDX_R_SHO:_IDX_R_SHO+2]) / 2
+    shift = np.array([0.5, 0.5], dtype=np.float32) - hip.mean(axis=0)
+    scale = 0.25 / max(np.linalg.norm(hip - sho, axis=1).mean(), 1e-3)
+    r = d.copy(); r[:, 0::3] += shift[0]; r[:, 1::3] += shift[1]
+    r[:, 0::3] = (r[:, 0::3] - 0.5) * scale + 0.5
+    r[:, 1::3] = (r[:, 1::3] - 0.5) * scale + 0.5
+    return r
+
+
+def adaptive_trim(seg, hip_margin=0.05, min_keep=10, window=5):
+    LW_Y = seg[:, 46]; RW_Y = seg[:, 49]
+    HIP_Y = (seg[:, 70] + seg[:, 73]) / 2
+    active = (LW_Y < HIP_Y - hip_margin) | (RW_Y < HIP_Y - hip_margin)
+    smooth = np.convolve(active.astype(float), np.ones(window)/window, mode='same')
+    s_cands = np.where(smooth > 0.4)[0]; e_cands = np.where(smooth > 0.7)[0]
+    if len(s_cands) == 0:
+        pad = len(seg) // 10
+        return seg[pad:len(seg)-pad] if len(seg) > 2*pad+min_keep else seg
+    start = int(s_cands[0])
+    end   = min(int(e_cands[-1])+1, len(seg)) if len(e_cands) > 0 else min(int(s_cands[-1])+1, len(seg))
+    if end-start < min_keep:
+        mid = (start+end)//2; start = max(0, mid-min_keep//2); end = min(len(seg), start+min_keep)
+    return seg[start:end]
 
 
 def build_masked_latent_seq(word_npys, vae, device,

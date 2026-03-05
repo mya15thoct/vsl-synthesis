@@ -25,7 +25,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from pathlib import Path
 from tqdm import tqdm
 
-from src.methods.mict.dataset_mict import MicTDataset, collate_fn_mict
+from src.methods.mict_v2.dataset_mict import MicTDataset, collate_fn_mict
 from src.methods.mict_v2.autoencoder import PoseVAE, vae_loss
 from src.methods.mict_v2.model_mict_v2 import MicTDiffusionModel, MicTDDPMScheduler
 
