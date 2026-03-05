@@ -153,20 +153,51 @@ def run_inference(ae_path, model_path, word_npys,
         prev  = torch.cat([torch.zeros_like(ml_t[:, :1, :]), ml_t[:, :-1, :]], dim=1)
         masked_np = (ml_t - prev).squeeze(0).cpu().numpy()
 
-    # DDPM sampling
+    # DDPM INPAINTING (RePaint-style):
+    # Instead of soft conditioning, HARD PIN word frames at each denoising step.
+    # After each step, overwrite word positions with noisy true latents → only transitions are free.
     scheduler = MicTDDPMScheduler(num_timesteps=cfg.get('num_timesteps', 1000)).to(device)
-    masked_np = np.array(masked_np, dtype=np.float32)   # ensure plain float32
+    masked_np  = np.array(masked_np, dtype=np.float32)
     masked_tensor = torch.tensor(masked_np, dtype=torch.float32, device=device).unsqueeze(0)
 
-    print(f"\nRunning DDPM {mode_str} sampling ({num_inference_steps} steps)...")
-    with torch.no_grad():
-        generated = scheduler.sample(
-            model, masked_tensor, num_inference_steps=num_inference_steps,
-        )  # (1, T_total, latent_dim)
-    generated = np.array(generated[0].cpu().numpy(), dtype=np.float32)  # (T_total, latent_dim)
+    T_total   = masked_tensor.shape[1]
+    latent_dim = masked_tensor.shape[2]
 
-    # Also ensure orig_latents are plain numpy
+    # Build known_mask (True = word frame) and known_x0 (true word latents)
     orig_latents = [np.array(z, dtype=np.float32) for z in orig_latents]
+    known_mask = torch.zeros(T_total, dtype=torch.bool, device=device)
+    known_x0   = torch.zeros(1, T_total, latent_dim, device=device)
+    pos = 0
+    for i, wlen in enumerate(word_lengths):
+        known_mask[pos:pos + wlen] = True
+        known_x0[0, pos:pos + wlen] = torch.tensor(
+            orig_latents[i], dtype=torch.float32, device=device)
+        pos += wlen
+        if i < len(word_lengths) - 1:
+            pos += transition_frames
+
+    # RePaint denoising loop
+    I_steps      = num_inference_steps
+    N_steps      = scheduler.num_timesteps
+    timestep_seq = [int(N_steps - 1 - (N_steps - 1) * i / (I_steps - 1)) for i in range(I_steps)]
+    timestep_seq[-1] = 0
+
+    print(f"\nRunning DDPM inpainting ({mode_str}, {num_inference_steps} steps)...")
+    x_t = torch.randn(1, T_total, latent_dim, device=device)
+
+    with torch.no_grad():
+        for t_int in timestep_seq:
+            x_t = scheduler.ddpm_step(model, x_t, t_int, masked_tensor, None)
+            if t_int > 0:
+                # Temporarily re-noise word positions at this timestep level
+                ab    = scheduler.alphas_cumprod[t_int]
+                noise = torch.randn_like(known_x0)
+                noisy_known = ab.sqrt() * known_x0 + (1.0 - ab).sqrt() * noise
+                x_t[:, known_mask, :] = noisy_known[:, known_mask, :]
+        x_t = x_t.clamp(0.0, 1.0)
+
+    generated = np.array(x_t[0].cpu().numpy(), dtype=np.float32)  # (T_total, latent_dim)
+
 
     # Extract transition latents and integrate velocity if needed
     transition_latents = []
