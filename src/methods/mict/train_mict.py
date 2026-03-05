@@ -35,6 +35,14 @@ from tqdm import tqdm
 
 from .model_mict import MicTDiffusionModel, MicTDDPMScheduler
 from .dataset_mict import MicTDataset, collate_fn_mict
+from src.core.skeleton_utils import (
+    bone_length_loss,
+    temporal_smoothness_loss,
+    coordinate_range_loss,
+    pose_validity_loss,
+    hand_coherence_loss,
+    motion_naturalness_loss,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -68,8 +76,9 @@ def mict_loss(
     mask_exp = valid_mask.unsqueeze(-1)                         # (B, T, 1)
     weighted_mae = (pred_x0 - target).abs() * w.unsqueeze(0).unsqueeze(0)
     n_valid  = mask_exp.sum().clamp(min=1.0) * pred_x0.shape[-1]
-    total    = (weighted_mae * mask_exp).sum() / n_valid
-    return total, total.item()
+    mae_loss = (weighted_mae * mask_exp).sum() / n_valid
+    
+    return mae_loss
 
 
 def apply_random_mask(
@@ -136,23 +145,47 @@ def train_epoch(
         # Model predicts clean interp_seqs
         pred_x0, _ = model(x_t, t, obs_seq, pad_key_mask)
 
-        # Loss on ALL frames (word + transition), skip padding
-        loss, mae_v = mict_loss(pred_x0, interp_seqs, valid_mask)
+        # 1. Base MAE Loss on all valid frames
+        mae_loss = mict_loss(pred_x0, interp_seqs, valid_mask)
+        
+        # 2. Physical & Geometric Losses (only applied to predicted valid frames)
+        # Apply valid_mask to zero out padded frames before computing physical losses
+        # to ensure padding doesn't affect motion calculations
+        mask_exp = valid_mask.unsqueeze(-1)
+        pred_valid = pred_x0 * mask_exp
+        
+        l_bone   = bone_length_loss(pred_valid)
+        l_smooth = temporal_smoothness_loss(pred_valid)
+        l_range  = coordinate_range_loss(pred_valid)
+        l_pose   = pose_validity_loss(pred_valid)
+        l_hand   = hand_coherence_loss(pred_valid)
+        l_motion = motion_naturalness_loss(pred_valid)
+        
+        # Weighted sum of losses
+        total_loss_tensor = (
+            mae_loss + 
+            args_dict['lambda_bone'] * l_bone +
+            args_dict['lambda_smooth'] * l_smooth +
+            args_dict['lambda_range'] * l_range +
+            args_dict['lambda_pose'] * l_pose +
+            args_dict['lambda_hand'] * l_hand +
+            args_dict['lambda_motion'] * l_motion
+        )
 
         optimizer.zero_grad()
-        loss.backward()
+        total_loss_tensor.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
-        total_loss += loss.item()
-        pbar.set_postfix({'L_joint': f"{mae_v:.4f}"})
+        total_loss += total_loss_tensor.item()
+        pbar.set_postfix({'Loss': f"{total_loss_tensor.item():.4f}", 'MAE': f"{mae_loss.item():.4f}"})
 
     return total_loss / len(dataloader)
 
 
 def validate(
     model, scheduler, dataloader, device,
-    mask_prob: float = 0.3,
+    args_dict,
 ):
     model.eval()
     total_loss = 0.0
@@ -175,8 +208,23 @@ def validate(
             x_t, _ = scheduler.add_noise(interp_seqs, t)
 
             pred_x0, _ = model(x_t, t, obs_seq, pad_key_mask)
-            loss, _ = mict_loss(pred_x0, interp_seqs, valid_mask)
-            total_loss += loss.item()
+            
+            mae_loss = mict_loss(pred_x0, interp_seqs, valid_mask)
+            
+            mask_exp = valid_mask.unsqueeze(-1)
+            pred_valid = pred_x0 * mask_exp
+            
+            total_loss_tensor = (
+                mae_loss + 
+                args_dict['lambda_bone'] * bone_length_loss(pred_valid) +
+                args_dict['lambda_smooth'] * temporal_smoothness_loss(pred_valid) +
+                args_dict['lambda_range'] * coordinate_range_loss(pred_valid) +
+                args_dict['lambda_pose'] * pose_validity_loss(pred_valid) +
+                args_dict['lambda_hand'] * hand_coherence_loss(pred_valid) +
+                args_dict['lambda_motion'] * motion_naturalness_loss(pred_valid)
+            )
+            
+            total_loss += total_loss_tensor.item()
 
     return total_loss / len(dataloader)
 
@@ -218,6 +266,14 @@ def main():
     # Loss & masking
     parser.add_argument('--mask_prob',   type=float, default=0.3,
                         help='Random masking probability during training (paper: 0.3)')
+                        
+    # Physical & Geometric Loss Weights (Disabled by default: 0.0)
+    parser.add_argument('--lambda_bone',   type=float, default=0.0, help='Weight for bone length loss')
+    parser.add_argument('--lambda_smooth', type=float, default=0.0, help='Weight for temporal smoothness loss')
+    parser.add_argument('--lambda_range',   type=float, default=0.0, help='Weight for coordinate range loss')
+    parser.add_argument('--lambda_pose',   type=float, default=0.0, help='Weight for pose validity loss')
+    parser.add_argument('--lambda_hand',   type=float, default=0.0, help='Weight for hand coherence loss')
+    parser.add_argument('--lambda_motion', type=float, default=0.0, help='Weight for motion naturalness loss')
 
     # Diffusion
     parser.add_argument('--num_timesteps', type=int, default=1000)
@@ -238,7 +294,9 @@ def main():
     print(f"  Data:          {args.data_dir}")
     print(f"  Output:        {args.output_dir}")
     print(f"  Mask prob:     {args.mask_prob} (paper: 0.3)")
-    print(f"  Loss:          L_joint MAE (all valid frames, Eq. 8)")
+    print(f"  Losses:        MAE (L_joint) + Physical Constraints")
+    print(f"    - Bone: {args.lambda_bone:.3f} | Smooth: {args.lambda_smooth:.3f} | Range: {args.lambda_range:.3f}")
+    print(f"    - Pose: {args.lambda_pose:.3f} | Hand:   {args.lambda_hand:.3f}   | Motion: {args.lambda_motion:.3f}")
     print(f"  Schedule:      cosine")
 
     output_dir = Path(args.output_dir)
@@ -326,11 +384,11 @@ def main():
     for epoch in range(start_epoch, args.epochs + 1):
         train_loss = train_epoch(
             model, scheduler, train_loader, optimizer, device, epoch,
-            args.mask_prob,
+            vars(args),
         )
         val_loss = validate(
             model, scheduler, val_loader, device,
-            args.mask_prob,
+            vars(args),
         )
         lr_scheduler.step()
 
