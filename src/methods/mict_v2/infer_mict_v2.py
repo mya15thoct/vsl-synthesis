@@ -79,13 +79,20 @@ def build_masked_latent_seq(word_npys, vae, device,
             z = vae.encode(t, deterministic=True)                                   # (1,T,D)
             orig_latents.append(z.squeeze(0).cpu().numpy())                         # (T,D)
 
-    # Build masked latent (zeros at transitions)
-    zeros = np.zeros((transition_frames, latent_dim), dtype=np.float32)
+        # Compute "null latent" = VAE.encode(zero_pose) to match training distribution.
+        # At training, masked_seqs has zero vectors at transition positions → encoded through VAE.
+        # Using raw np.zeros at inference causes distribution mismatch → model outputs mean pose.
+        zero_pose  = torch.zeros(1, 1, 1659, dtype=torch.float32, device=device)
+        null_z     = vae.encode(zero_pose, deterministic=True)          # (1,1,D)
+        null_latent = null_z.squeeze().cpu().numpy().astype(np.float32)  # (D,)
+
+    # Build masked latent (null_latent at transitions, word latents at word positions)
+    null_block = np.tile(null_latent, (transition_frames, 1))  # (tf, D)
     parts = []
     for i, z in enumerate(orig_latents):
-        parts.append(np.array(z, dtype=np.float32))   # force plain numpy
+        parts.append(np.array(z, dtype=np.float32))
         if i < len(orig_latents) - 1:
-            parts.append(zeros.copy())
+            parts.append(null_block.copy())
     masked_latent = np.concatenate(parts, axis=0)
 
     return masked_latent, word_lengths, orig_latents, segments_norm
