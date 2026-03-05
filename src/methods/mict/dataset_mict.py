@@ -58,10 +58,15 @@ class MicTDataset(Dataset):
                 f"File {self.files[idx].name} không có 'interpolated_sequence'. "
                 f"Hãy regenerate data với code mới (prepare_data_mict.py)."
             )
-        full_seq   = data['full_sequence'].astype(np.float32)    # (T_words, 1659)
+
         masked_seq = data['masked_sequence'].astype(np.float32)  # (T_total, 1659)
         frame_mask = data['frame_mask'].astype(np.float32)       # (T_total,)
         interp_seq = data['interpolated_sequence'].astype(np.float32)  # (T_total, 1659)
+
+        if 'full_sequence' in data:
+            full_seq = data['full_sequence'].astype(np.float32)    # (T_words, 1659)
+        else:
+            full_seq = masked_seq
 
         T_words = len(full_seq)
         T_total = len(masked_seq)
@@ -71,7 +76,7 @@ class MicTDataset(Dataset):
             full_seq = full_seq[:self.max_len]
             T_words  = self.max_len
 
-        max_masked = int(self.max_len * T_total / max(len(data['full_sequence']), 1))
+        max_masked = int(self.max_len * T_total / max(len(full_seq), 1))
         if T_total > max_masked:
             masked_seq = masked_seq[:max_masked]
             interp_seq = interp_seq[:max_masked]
