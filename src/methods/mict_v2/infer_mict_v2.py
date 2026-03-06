@@ -183,7 +183,7 @@ def run_inference(ae_path, model_path, word_npys,
     print(f"  Total latent seq: {masked_latent.shape[0]} frames × {masked_latent.shape[1]}D")
 
     # Convert masked latent to velocity if needed
-    masked_np = masked_latent
+    masked_np = np.array(masked_latent, dtype=np.float32)   # ensure plain float32
     if use_velocity:
         ml_t = torch.tensor(masked_np, dtype=torch.float32, device=device).unsqueeze(0)
         prev  = torch.cat([torch.zeros_like(ml_t[:, :1, :]), ml_t[:, :-1, :]], dim=1)
