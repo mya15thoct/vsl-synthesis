@@ -182,18 +182,10 @@ def run_inference(ae_path, model_path, word_npys,
     print(f"  Transition frames: {transition_frames} per gap")
     print(f"  Total latent seq: {masked_latent.shape[0]} frames × {masked_latent.shape[1]}D")
 
-    # Convert masked latent to velocity if needed
-    masked_np = np.array(masked_latent, dtype=np.float32)   # ensure plain float32
-    if use_velocity:
-        ml_t = torch.tensor(masked_np, dtype=torch.float32, device=device).unsqueeze(0)
-        prev  = torch.cat([torch.zeros_like(ml_t[:, :1, :]), ml_t[:, :-1, :]], dim=1)
-        masked_np = (ml_t - prev).squeeze(0).cpu().numpy()
-
     # DDPM INPAINTING (RePaint-style):
-    # Instead of soft conditioning, HARD PIN word frames at each denoising step.
-    # After each step, overwrite word positions with noisy true latents → only transitions are free.
+    # HARD PIN word frames at each denoising step — only transitions are free.
     scheduler = MicTDDPMScheduler(num_timesteps=cfg.get('num_timesteps', 1000)).to(device)
-    masked_np  = np.array(masked_np, dtype=np.float32)
+    masked_np  = np.array(masked_latent, dtype=np.float32)
     masked_tensor = torch.tensor(masked_np, dtype=torch.float32, device=device).unsqueeze(0)
 
     T_total   = masked_tensor.shape[1]

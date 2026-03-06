@@ -30,14 +30,7 @@ from src.methods.mict_v2.autoencoder import PoseVAE, vae_loss
 from src.methods.mict_v2.model_mict_v2 import MicTDiffusionModel, MicTDDPMScheduler
 
 
-# ---------------------------------------------------------------------------
-# Velocity helpers
-# ---------------------------------------------------------------------------
 
-def to_velocity(latent):
-    """(B,T,D) absolute → velocity: v[t] = z[t] - z[t-1], v[0] = z[0]"""
-    prev = torch.cat([torch.zeros_like(latent[:, :1, :]), latent[:, :-1, :]], dim=1)
-    return latent - prev
 
 
 # ---------------------------------------------------------------------------
@@ -126,8 +119,7 @@ def encode_batch(vae, seqs, device):
         return vae.encode(seqs.to(device), deterministic=True)
 
 
-def train_diff_epoch(model, scheduler, vae, loader, optimizer, device,
-                     mask_prob, use_velocity):
+def train_diff_epoch(model, scheduler, vae, loader, optimizer, device, mask_prob):
     model.train()
     total = 0.0
     for masked_seqs, interp_seqs, trans_masks in tqdm(loader, desc="  Diff [train]", leave=False):
@@ -141,18 +133,15 @@ def train_diff_epoch(model, scheduler, vae, loader, optimizer, device,
         lm = encode_batch(vae, masked_seqs, device)
         lg = encode_batch(vae, interp_seqs, device)
 
-        target    = to_velocity(lg) if use_velocity else lg
-        obs_input = to_velocity(lm) if use_velocity else lm
-
         word_mask = (1.0 - trans_masks)
         extra     = (torch.rand(B, T, device=device) < mask_prob).float() * word_mask
-        obs_input = obs_input * (1.0 - extra.unsqueeze(-1))
+        obs_input = lm * (1.0 - extra.unsqueeze(-1))
 
         t = torch.randint(0, scheduler.num_timesteps, (B,), device=device).long()
-        x_t, _ = scheduler.add_noise(target, t)
+        x_t, _ = scheduler.add_noise(lg, t)
         pred, _ = model(x_t, t, obs_input, pad_kv)
 
-        loss = latent_loss(pred, target, valid_mask)
+        loss = latent_loss(pred, lg, valid_mask)
         optimizer.zero_grad(); loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
@@ -161,7 +150,7 @@ def train_diff_epoch(model, scheduler, vae, loader, optimizer, device,
 
 
 @torch.no_grad()
-def val_diff(model, scheduler, vae, loader, device, mask_prob, use_velocity):
+def val_diff(model, scheduler, vae, loader, device, mask_prob):
     model.eval()
     total = 0.0
     for masked_seqs, interp_seqs, trans_masks in loader:
@@ -175,16 +164,14 @@ def val_diff(model, scheduler, vae, loader, device, mask_prob, use_velocity):
         lm = encode_batch(vae, masked_seqs, device)
         lg = encode_batch(vae, interp_seqs, device)
 
-        target    = to_velocity(lg) if use_velocity else lg
-        obs_input = to_velocity(lm) if use_velocity else lm
         word_mask = (1.0 - trans_masks)
         extra     = (torch.rand(B, T, device=device) < mask_prob).float() * word_mask
-        obs_input = obs_input * (1.0 - extra.unsqueeze(-1))
+        obs_input = lm * (1.0 - extra.unsqueeze(-1))
 
         t = torch.randint(0, scheduler.num_timesteps, (B,), device=device).long()
-        x_t, _ = scheduler.add_noise(target, t)
+        x_t, _ = scheduler.add_noise(lg, t)
         pred, _ = model(x_t, t, obs_input, pad_kv)
-        total  += latent_loss(pred, target, valid_mask).item()
+        total  += latent_loss(pred, lg, valid_mask).item()
     return total / len(loader)
 
 
@@ -193,9 +180,8 @@ def train_stage2(args, vae, ae_ckpt, train_loader, val_loader, device):
     diff_dir = Path(args.output_dir) / 'diffusion'
     diff_dir.mkdir(parents=True, exist_ok=True)
 
-    mode = 'Velocity+Latent' if args.use_velocity else 'Latent'
     print(f"\n{'='*55}")
-    print(f"  Stage 2/2: {mode} Diffusion ({args.latent_dim}D)")
+    print(f"  Stage 2/2: Latent Diffusion ({args.latent_dim}D)")
     print(f"{'='*55}")
 
     model = MicTDiffusionModel(
@@ -226,16 +212,16 @@ def train_stage2(args, vae, ae_ckpt, train_loader, val_loader, device):
 
     for epoch in range(1, args.epochs + 1):
         train_loss = train_diff_epoch(model, scheduler, vae, train_loader,
-                                       optimizer, device, args.mask_prob, args.use_velocity)
+                                       optimizer, device, args.mask_prob)
         val_loss   = val_diff(model, scheduler, vae, val_loader,
-                               device, args.mask_prob, args.use_velocity)
+                               device, args.mask_prob)
         lr_sched.step()
         lr = optimizer.param_groups[0]['lr']
         print(f"  Epoch {epoch:3d}/{args.epochs} | train={train_loss:.4f} val={val_loss:.4f} lr={lr:.2e}")
         history.append({'epoch': epoch, 'train': train_loss, 'val': val_loss})
         ckpt = {'epoch': epoch, 'model_state_dict': model.state_dict(),
                 'val_loss': val_loss, 'config': model.config, 'ae_config': ae_cfg,
-                'use_velocity': args.use_velocity}
+                'use_velocity': False}
         torch.save(ckpt, diff_dir / 'latest.pt')
         if val_loss < best_val:
             best_val = val_loss; patience_ctr = 0
@@ -298,8 +284,7 @@ def main():
     torch.manual_seed(args.seed)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    mode = 'Velocity+Latent' if args.use_velocity else 'Latent'
-    print(f"\nMicT V2 — {mode} Diffusion")
+    print(f"\nMicT V2 — Latent Diffusion")
     print(f"  Device:     {device}")
     print(f"  Data:       {args.data_dir}")
     print(f"  Output:     {args.output_dir}")
